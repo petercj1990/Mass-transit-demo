@@ -1,0 +1,106 @@
+# Demo requests. Run them from Visual Studio, Rider, or VS Code (REST Client extension).
+# Watch the console of the running app while you send them: every step is logged.
+
+@baseUrl = http://localhost:5200
+
+### What's in stock? (MUG: plenty, PLUSH: only 3, BOOK: none)
+GET {{baseUrl}}/inventory
+
+### 1. Happy path: reserve stock -> charge card -> order Completed
+# @name happyOrder
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "alice",
+  "paymentMethod": "card-ok",
+  "lines": [
+    { "sku": "MUG", "quantity": 2 },
+    { "sku": "PLUSH", "quantity": 1 }
+  ]
+}
+
+### Ask the saga where the order is (request/response answered by the saga itself)
+GET {{baseUrl}}/orders/{{happyOrder.response.body.$.orderId}}
+
+### 2. Retry: the payment gateway fails twice, then succeeds. Watch the attempts in the log.
+# @name flakyOrder
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "bob",
+  "paymentMethod": "card-flaky",
+  "lines": [ { "sku": "MUG", "quantity": 1 } ]
+}
+
+###
+GET {{baseUrl}}/orders/{{flakyOrder.response.body.$.orderId}}
+
+### 3. Compensation: the card is declined, so the saga releases the reserved stock
+# @name declinedOrder
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "carol",
+  "paymentMethod": "card-declined",
+  "lines": [ { "sku": "PLUSH", "quantity": 2 } ]
+}
+
+###
+GET {{baseUrl}}/orders/{{declinedOrder.response.body.$.orderId}}
+
+### 4. Fault: the gateway is down. 5 attempts, then the message moves to the
+###    "charge-payment_error" queue, and the saga handles Fault<ChargePayment> by releasing the stock.
+# @name faultedOrder
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "dave",
+  "paymentMethod": "gateway-down",
+  "lines": [ { "sku": "MUG", "quantity": 3 } ]
+}
+
+### (wait ~6 seconds for the retries to run out)
+GET {{baseUrl}}/orders/{{faultedOrder.response.body.$.orderId}}
+
+### 5. Out of stock: nothing is reserved, so there's nothing to compensate
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "erin",
+  "paymentMethod": "card-ok",
+  "lines": [ { "sku": "BOOK", "quantity": 1 } ]
+}
+
+### 6. Rejected by the consumer: the API gets an OrderRejected response (400)
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "erin",
+  "paymentMethod": "card-ok",
+  "lines": [ { "sku": "LAPTOP", "quantity": 1 } ]
+}
+
+### 7. Bus outbox: save the stock change and publish InventoryRestocked in ONE transaction.
+###    Try it with RabbitMQ stopped (docker compose stop rabbitmq): you still get a 200,
+###    and the event waits in the OutboxMessage table until RabbitMQ is back.
+POST {{baseUrl}}/inventory/BOOK/restock
+Content-Type: application/json
+
+{
+  "quantity": 5
+}
+
+### Unknown order: the saga answers OrderNotFound (404)
+GET {{baseUrl}}/orders/00000000-0000-0000-0000-000000000001
+
+### Everything MassTransit built: queues, bindings, and each endpoint's middleware pipeline
+GET {{baseUrl}}/debug/bus
+
+### Is the bus connected to RabbitMQ?
+GET {{baseUrl}}/health
