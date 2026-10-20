@@ -10,12 +10,10 @@ namespace Kinforge.Sim
     /// </summary>
     public static class PlayerBrain
     {
-        private static readonly BrainContext C = new BrainContext();
-
         public static void Think(World w, Unit u)
         {
             if (u.Squad == null) return;
-            var c = C;
+            var c = w.BrainCtx;
             c.Setup(w, u);
 
             ConsiderDodge(c);

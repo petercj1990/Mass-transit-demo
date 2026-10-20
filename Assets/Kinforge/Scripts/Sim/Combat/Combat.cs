@@ -9,8 +9,6 @@ namespace Kinforge.Sim
     /// </summary>
     public static class Combat
     {
-        private static readonly List<Unit> Chain = new List<Unit>(8);
-
         public static Unit OwnerUnit(World w, Entity src)
         {
             if (src is Unit u) return u;
@@ -125,11 +123,12 @@ namespace Kinforge.Sim
                 case DamageType.Arc:
                     if ((flags & HitFlags.NoChain) == 0)
                     {
-                        w.QueryUnits(t.Pos, Balance.ArcChainRange, t.Faction, Chain);
-                        Chain.Remove(t);
-                        Chain.Sort((a, b) => Vec2.DistanceSq(a.Pos, t.Pos).CompareTo(Vec2.DistanceSq(b.Pos, t.Pos)));
-                        int n = Math.Min(Balance.ArcChainTargets, Chain.Count);
-                        var targets = Chain.GetRange(0, n);
+                        var chain = w.ChainScratch;
+                        w.QueryUnits(t.Pos, Balance.ArcChainRange, t.Faction, chain);
+                        chain.Remove(t);
+                        chain.Sort((a, b) => Vec2.DistanceSq(a.Pos, t.Pos).CompareTo(Vec2.DistanceSq(b.Pos, t.Pos)));
+                        int n = Math.Min(Balance.ArcChainTargets, chain.Count);
+                        var targets = chain.GetRange(0, n);
                         foreach (var o in targets)
                         {
                             w.Emit(SimEventType.ArcChain, t.Id, o.Id, o.Pos);

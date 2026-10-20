@@ -6,8 +6,6 @@ namespace Kinforge.Sim
     /// <summary>Spawning and per-tick behaviour of engineer works, fields and base buildings.</summary>
     public static class StructureSystem
     {
-        private static readonly List<Unit> Hits = new List<Unit>(16);
-
         public static Structure SpawnRampart(World w, Unit builder, Vec2 center, Vec2 dir, float length = 5f)
         {
             var def = AbilityDefs.Get(AbilityId.RaiseRampart);
@@ -297,9 +295,10 @@ namespace Kinforge.Sim
 
         private static void UpdateSpikes(World w, Structure s, float dt)
         {
-            w.QueryUnits(s.Pos, s.AreaRadius, Hostile(s), Hits, false);
+            var hits = w.FieldScratch;
+            w.QueryUnits(s.Pos, s.AreaRadius, Hostile(s), hits, false);
             var owner = w.FindUnitAny(s.OwnerUnitId);
-            foreach (var u in Hits)
+            foreach (var u in hits)
             {
                 if (u.Def.Flying) continue;
                 u.Status.SlowPct = Math.Max(u.Status.SlowPct, 0.4f);
@@ -311,9 +310,10 @@ namespace Kinforge.Sim
 
         private static void UpdateRegen(World w, Structure s, float dt)
         {
-            w.QueryUnits(s.Pos, s.AreaRadius, s.Faction, Hits, false);
+            var hits = w.FieldScratch;
+            w.QueryUnits(s.Pos, s.AreaRadius, s.Faction, hits, false);
             var owner = w.FindUnitAny(s.OwnerUnitId);
-            foreach (var u in Hits)
+            foreach (var u in hits)
             {
                 Combat.Heal(w, owner, u, s.Power * dt, false);
             }

@@ -6,10 +6,9 @@ namespace Kinforge.Sim
     /// <summary>What each ability does when its cast completes.</summary>
     public static class AbilitySystem
     {
-        private static readonly List<Unit> Hits = new List<Unit>(16);
-
         public static void Resolve(World w, Unit u, AbilityId id, int targetId, Vec2 point, Vec2 dir)
         {
+            var hits = w.AbilityScratch;
             var def = AbilityDefs.Get(id);
             Faction hostile = u.Faction == Faction.Player ? Faction.Enemy : Faction.Player;
             var target = w.FindUnit(targetId);
@@ -19,8 +18,8 @@ namespace Kinforge.Sim
             {
                 case AbilityId.TauntRoar:
                 {
-                    w.QueryUnits(u.Pos, def.Radius, hostile, Hits);
-                    foreach (var e in Hits) Combat.Taunt(w, e, u, def.Duration);
+                    w.QueryUnits(u.Pos, def.Radius, hostile, hits);
+                    foreach (var e in hits) Combat.Taunt(w, e, u, def.Duration);
                     w.Emit(SimEventType.AbilityImpact, u.Id, 0, u.Pos, def.Radius, def.Type, id);
                     break;
                 }
@@ -37,8 +36,8 @@ namespace Kinforge.Sim
                 case AbilityId.ShockwaveSlam:
                 {
                     Vec2 face = dir.LengthSq > 0.001f ? dir.Normalized : Vec2.FromAngle(u.Facing);
-                    ConeHits(w, u.Pos, face, def.Radius + u.Radius, def.ArcDeg, hostile, Hits);
-                    foreach (var e in Hits.ToArray())
+                    ConeHits(w, u.Pos, face, def.Radius + u.Radius, def.ArcDeg, hostile, hits);
+                    foreach (var e in hits.ToArray())
                     {
                         Combat.Deal(w, u, e, power, def.Type, HitFlags.Melee | HitFlags.Ability);
                         Combat.Knockback(w, e, e.Pos - u.Pos, 3f);
@@ -53,9 +52,9 @@ namespace Kinforge.Sim
                 case AbilityId.Cleave:
                 {
                     Vec2 face = Vec2.FromAngle(u.Facing);
-                    ConeHits(w, u.Pos, face, u.Radius + def.Range + 0.9f, def.ArcDeg, hostile, Hits);
-                    foreach (var e in Hits.ToArray()) Combat.Deal(w, u, e, power, def.Type, HitFlags.Melee | HitFlags.Ability);
-                    w.Emit(SimEventType.AbilityImpact, u.Id, Hits.Count, u.Pos + face * 1.5f, def.Range, def.Type, id);
+                    ConeHits(w, u.Pos, face, u.Radius + def.Range + 0.9f, def.ArcDeg, hostile, hits);
+                    foreach (var e in hits.ToArray()) Combat.Deal(w, u, e, power, def.Type, HitFlags.Melee | HitFlags.Ability);
+                    w.Emit(SimEventType.AbilityImpact, u.Id, hits.Count, u.Pos + face * 1.5f, def.Range, def.Type, id);
                     break;
                 }
                 case AbilityId.GutHook:
@@ -123,8 +122,8 @@ namespace Kinforge.Sim
                     RemoveTelegraph(w, u.ActionTelegraphId);
                     float radius = id == AbilityId.TailSlam ? def.Radius : u.Radius + def.Range + 0.6f;
                     float dmg = def.Power * (u.Kind == UnitKind.Rustmaw && w.Boss != null ? w.Boss.DamageDealtMultiplier : 1f);
-                    ConeHits(w, u.Pos, dir, radius, def.ArcDeg, hostile, Hits);
-                    foreach (var e in Hits.ToArray())
+                    ConeHits(w, u.Pos, dir, radius, def.ArcDeg, hostile, hits);
+                    foreach (var e in hits.ToArray())
                     {
                         Combat.Deal(w, u, e, dmg, def.Type, HitFlags.Melee | HitFlags.Ability);
                         if (id == AbilityId.TailSlam) Combat.Knockback(w, e, e.Pos - u.Pos, 2.5f);

@@ -68,6 +68,13 @@ namespace Kinforge.Sim
         public int InspectedUnitId;
         public bool RevealMap;
 
+        // Per-world scratch space, so several worlds can tick on different threads (tests, a future host).
+        internal readonly BrainContext BrainCtx = new BrainContext();
+        internal readonly List<Unit> ChainScratch = new List<Unit>(16);
+        internal readonly List<Unit> AbilityScratch = new List<Unit>(16);
+        internal readonly List<Unit> FieldScratch = new List<Unit>(16);
+        internal int PathsThisTick;
+
         private readonly Dictionary<int, Entity> _entities = new Dictionary<int, Entity>();
         private int _nextId = 1;
         private readonly List<Unit> _scratchUnits = new List<Unit>(64);

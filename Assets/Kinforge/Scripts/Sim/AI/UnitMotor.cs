@@ -9,7 +9,6 @@ namespace Kinforge.Sim
     public static class UnitMotor
     {
         private const int MaxPathsPerTick = 8;
-        private static int _pathsThisTick;
 
         public static float BaseSpeed(Unit u)
         {
@@ -25,7 +24,7 @@ namespace Kinforge.Sim
 
         public static void Update(World w)
         {
-            _pathsThisTick = 0;
+            w.PathsThisTick = 0;
             float dt = Balance.Dt;
             var units = w.Units;
             for (int i = 0; i < units.Count; i++)
@@ -111,9 +110,9 @@ namespace Kinforge.Sim
                 return goal;
             }
 
-            if (pathStale && w.Time - u.PathTime > 0.4f && _pathsThisTick < MaxPathsPerTick)
+            if (pathStale && w.Time - u.PathTime > 0.4f && w.PathsThisTick < MaxPathsPerTick)
             {
-                _pathsThisTick++;
+                w.PathsThisTick++;
                 bool ok = w.Nav.FindPath(u.Pos, goal, u.Path, u.Radius);
                 u.PathFailed = !ok;
                 u.PathIndex = 0;
