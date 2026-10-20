@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Builds the engine-agnostic simulation exactly as Unity sees it:
+    .NET Standard 2.1 API surface, C# 9, no UnityEngine reference.
+    Unity compiles the same files through Assets/Kinforge/Scripts/Sim/Kinforge.Sim.asmdef.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>Kinforge.Sim</AssemblyName>
+    <RootNamespace>Kinforge.Sim</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Assets/Kinforge/Scripts/Sim/**/*.cs" />
+  </ItemGroup>
+</Project>
