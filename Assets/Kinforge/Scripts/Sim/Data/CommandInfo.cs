@@ -48,7 +48,7 @@ namespace Kinforge.Sim
             Add(CommandType.Stack, "Stack", "M", "Cluster tight for group heals and shields",
                 "Raises a ring wall around the squad", "Places one turret in the centre",
                 "Burst damage phases", "Area attacks punish it");
-            Add(CommandType.FallBack, "Fall Back", "G", "Disengage to the base (or your last move point), tank covering",
+            Add(CommandType.FallBack, "Fall Back", "G", "Disengage all the way to base, tank covering the retreat",
                 "Collapses the path behind the squad", "Leaves a turret behind to slow pursuers",
                 "Losing fights", "Units can be downed while retreating");
             Add(CommandType.Rest, "Rest", "R", "Out of combat only: sit, recover, clear Injured status",
