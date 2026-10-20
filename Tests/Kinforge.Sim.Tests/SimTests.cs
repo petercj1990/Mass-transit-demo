@@ -171,7 +171,7 @@ namespace Kinforge.Sim.Tests
             u.Doctrine.Bank();
             u.Injured = true;
             Combat.Deal(w, maw, u, 9999f, DamageType.Kinetic, HitFlags.Melee);
-            w.Stock.Add(ResourceKind.Scrap, 50f);
+            w.Stock.Add(ResourceKind.Stone, 50f);
             w.Stock.Add(ResourceKind.Hide, 50f);
             for (int i = 0; i < 20 * 30; i++) w.Step();
             Assert.Equal(LifeState.Active, u.Life);
@@ -388,6 +388,22 @@ namespace Kinforge.Sim.Tests
             Assert.Equal(3, w.Boss.Phase);
             Assert.Equal(0f, w.Boss.Body.Armor);
             Assert.Equal(2f, w.Boss.DamageTakenMultiplier(w, null, HitFlags.None));
+        }
+
+        [Fact]
+        public void Cores_left_in_the_raid_return_when_it_ends()
+        {
+            var w = Scenarios.BossArena(1);
+            var sq = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(0f, -12f), 2, CommandType.DefensiveFormation, 2);
+            for (int i = 0; i < 40; i++) w.Step();
+            Assert.True(w.Boss.Active);
+            foreach (var m in sq.Members.ToList()) Combat.Deal(w, w.Boss.Body, m, 99999f, DamageType.Kinetic, HitFlags.Melee);
+            Assert.True(sq.Wiped);
+            Assert.Single(w.Caches);
+            for (int i = 0; i < 20 * 15; i++) w.Step();
+            Assert.Equal(0, w.Boss.Phase);
+            Assert.Empty(w.Caches);
+            Assert.All(sq.Members, m => Assert.True(m.Core == CoreState.AtCradle || m.Life == LifeState.Active));
         }
 
         [Fact]

@@ -290,7 +290,28 @@ namespace Kinforge.Sim
             }
             Group.Members.RemoveAll(m => m != Body);
             AbilitySystem.RemoveTelegraph(w, _telegraphId);
+            ReturnRaidCores(w);
             w.Alert("Rustmaw retreats into its lair and recovers.", Center, 1);
+        }
+
+        /// <summary>
+        /// "Killed units stay out until the raid ends": when it ends, kin-cores dropped inside the
+        /// arena find their way back to the Kin Cradle.
+        /// </summary>
+        private void ReturnRaidCores(World w)
+        {
+            int n = 0;
+            foreach (var c in w.Caches)
+            {
+                if (c.Removed || !w.InArena(c.Pos, 4f)) continue;
+                foreach (int id in c.UnitIds)
+                {
+                    w.Base?.ReceiveCore(w, id);
+                    n++;
+                }
+                c.Removed = true;
+            }
+            if (n > 0) w.Alert($"The raid is over: {n} kin-core(s) left in Breach Hold return to the Kin Cradle.", w.BasePos, 3);
         }
 
         private Unit SelectTarget(World w)
@@ -604,6 +625,7 @@ namespace Kinforge.Sim
             {
                 if (sq.Fight != null && sq.Fight.EnemyIds.Contains(Body.Id)) sq.Fight.BossKilled = true;
             }
+            ReturnRaidCores(w);
             w.Emit(SimEventType.Victory, Body.Id, 0, Body.Pos);
             w.Alert("RUSTMAW IS DEAD! Its relic is yours: the Forge, Core Lathe and War Shrine can now be built (next milestone). Biome 1 cleared.", Body.Pos, 3);
         }

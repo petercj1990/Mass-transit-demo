@@ -17,18 +17,20 @@ namespace Kinforge.Sim
     /// </summary>
     public sealed class PlayerBase
     {
-        public static readonly Cost RegrowCost = Cost.Of(ResourceKind.Scrap, 10, ResourceKind.Hide, 6);
-        public static readonly Cost RegrowCostTier2 = Cost.Of(ResourceKind.Scrap, 10, ResourceKind.Hide, 6, ResourceKind.Alloy, 6);
-        public static readonly Cost RecruitCost = Cost.Of(ResourceKind.Scrap, 40, ResourceKind.Stone, 40, ResourceKind.Fiber, 30, ResourceKind.Hide, 12);
+        // Rebirth only uses renewable materials (hide from respawning camps, plentiful crater stone), so a
+        // run of deaths can never soft-lock the clan.
+        public static readonly Cost RegrowCost = Cost.Of(ResourceKind.Hide, 6, ResourceKind.Stone, 8);
+        public static readonly Cost RegrowCostTier2 = Cost.Of(ResourceKind.Hide, 12, ResourceKind.Stone, 12);
+        public static readonly Cost RecruitCost = Cost.Of(ResourceKind.Scrap, 60, ResourceKind.Stone, 50, ResourceKind.Fiber, 40, ResourceKind.Hide, 20);
         public static readonly Cost[] WarHallCost =
         {
             null,
-            Cost.Of(ResourceKind.Stone, 40, ResourceKind.Fiber, 25, ResourceKind.Ferrite, 15),
-            Cost.Of(ResourceKind.Stone, 60, ResourceKind.Alloy, 20, ResourceKind.Hide, 20),
+            Cost.Of(ResourceKind.Stone, 60, ResourceKind.Fiber, 35, ResourceKind.Ferrite, 25),
+            Cost.Of(ResourceKind.Stone, 80, ResourceKind.Alloy, 30, ResourceKind.Hide, 30),
         };
-        public static readonly Cost WeaponsCost = Cost.Of(ResourceKind.Alloy, 20, ResourceKind.Hide, 10);
-        public static readonly Cost ArmorCost = Cost.Of(ResourceKind.Alloy, 25, ResourceKind.Hide, 12, ResourceKind.Fiber, 10);
-        public static readonly Cost SigilCost = Cost.Of(ResourceKind.Alloy, 15, ResourceKind.Hide, 20, ResourceKind.Stone, 30);
+        public static readonly Cost WeaponsCost = Cost.Of(ResourceKind.Alloy, 30, ResourceKind.Hide, 16);
+        public static readonly Cost ArmorCost = Cost.Of(ResourceKind.Alloy, 35, ResourceKind.Hide, 20, ResourceKind.Fiber, 15);
+        public static readonly Cost SigilCost = Cost.Of(ResourceKind.Alloy, 30, ResourceKind.Hide, 30, ResourceKind.Stone, 50);
         public static readonly Cost RecallCost = Cost.Of(ResourceKind.Scrap, 20);
 
         public const float RecruitSeconds = 30f;

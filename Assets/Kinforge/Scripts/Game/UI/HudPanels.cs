@@ -185,7 +185,7 @@ namespace Kinforge.Game
             if (!_showObjectives)
             {
                 var small = Panel(new Rect(x, y, 328, 24));
-                if (GUI.Button(small, "Objectives  (show)", _hidden)) _showObjectives = true;
+                if (GUI.Button(small, GUIContent.none, _hidden)) _showObjectives = true;
                 GUI.Label(new Rect(small.x + 8, small.y + 3, 300, 20), "<b>Objectives</b>  <size=10>(click to show)</size>", _small);
                 return;
             }

@@ -119,7 +119,7 @@ namespace Kinforge.Sim
                 Attack = new AttackDef { Name = "Bite", Range = 1.5f, Damage = 21f, Type = DamageType.Kinetic, Cooldown = 1.2f, Windup = 0.3f },
                 Resist = new[] { 1f, 1.2f, 1.25f, 1f, 1f, 1f },
                 Kit = new[] { AbilityId.Pounce },
-                Loot = new[] { new LootEntry(ResourceKind.Hide, 4) },
+                Loot = new[] { new LootEntry(ResourceKind.Hide, 5) },
                 Blurb = "Pack hunter that dens in crater walls. Pounces on the soft back line.",
             });
             Add(new UnitDef

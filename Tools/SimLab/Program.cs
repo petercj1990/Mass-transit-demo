@@ -24,6 +24,8 @@ static class Program
             case "bosstrace": BossTrace(Arg(1, 500), Arg(2, 2), Arg(3, 2), Arg(4, 1) != 0); break;
             case "p3": P3(Arg(1, 500), Arg(2, 2)); break;
             case "gather": GatherTest(); break;
+            case "bake": BakeTiming(); break;
+            case "campaign": Campaign.Run(Arg(1, 1337), Arg(2, 90), Arg(3, 0) != 0); break;
             case "trace": Trace(Arg(1, 1), Arg(2, 1), Arg(3, 0), Arg(4, 0)); break;
             default: Console.WriteLine("unknown mode"); return 1;
         }
@@ -259,6 +261,36 @@ static class Program
             }
         }
         Console.WriteLine(string.Join(", ", counts.Where(kv => kv.Key != SimEventType.Hit && kv.Key != SimEventType.Swing && kv.Key != SimEventType.Miss).Select(kv => $"{kv.Key}={kv.Value}")));
+    }
+
+    static void BakeTiming()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var w = World.Create(1337);
+        Console.WriteLine($"World.Create: {sw.ElapsedMilliseconds} ms");
+        sw.Restart();
+        int n = w.Height.Verts;
+        var v = new float[n * n];
+        for (int z = 0; z < n; z++)
+        for (int x = 0; x < n; x++)
+        {
+            var p = new Vec2(x, z);
+            v[z * n + x] = (int)WorldGen.Ground(w, p) + w.GroundNoise.Fbm(p.X * 0.08f, p.Z * 0.08f, 3) + w.Height.Slope(p);
+        }
+        int size = 1024;
+        float m2px = (float)w.Height.Size / size;
+        double acc = 0;
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float fx = (x + 0.5f) * m2px, fz = (y + 0.5f) * m2px;
+            int ix = Math.Min((int)fx, n - 2), iz = Math.Min((int)fz, n - 2);
+            float tx = fx - ix, tz = fz - iz;
+            int i0 = iz * n + ix;
+            float a = v[i0] + (v[i0 + 1] - v[i0]) * tx, b = v[i0 + n] + (v[i0 + n + 1] - v[i0 + n]) * tx;
+            acc += a + (b - a) * tz;
+        }
+        Console.WriteLine($"Albedo bake math (1024^2): {sw.ElapsedMilliseconds} ms ({acc:0})");
     }
 
     static void GatherTest()

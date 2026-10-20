@@ -57,35 +57,60 @@ namespace Kinforge.Game
 
         private static Texture2D BakeAlbedo(World w)
         {
-            int size = TextureSize;
-            float m2px = (float)w.Height.Size / size;
-            var px = new Color32[size * size];
+            // Classify and shade once per 1 m terrain vertex (the expensive part), then fill the
+            // texture by bilinear blending plus a cheap per-pixel speckle.
+            int n = w.Height.Verts;
+            var vcol = new Color[n * n];
             var noise = w.GroundNoise ?? new Noise(1);
-            for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
+            for (int z = 0; z < n; z++)
+            for (int x = 0; x < n; x++)
             {
-                var p = new Vec2((x + 0.5f) * m2px, (y + 0.5f) * m2px);
+                var p = new Vec2(x, z);
                 var g = WorldGen.Ground(w, p);
                 Color c = Palette.GroundColor(g);
                 float n1 = noise.Fbm(p.X * 0.08f, p.Z * 0.08f, 3);
-                float n2 = noise.Value(p.X * 1.3f + 300f, p.Z * 1.3f);
                 if (g == GroundType.Grass)
                 {
                     c = Color.Lerp(Palette.GrassDark, Palette.Grass, n1 * 1.3f - 0.1f);
-                    if (n2 > 0.8f) c = Color.Lerp(c, Palette.Stone, 0.35f);
+                    if (noise.Value(p.X * 0.35f + 300f, p.Z * 0.35f) > 0.78f) c = Color.Lerp(c, Palette.Stone, 0.35f);
                 }
                 else if (g == GroundType.CraterBed)
                 {
                     c = Color.Lerp(c, new Color(0.33f, 0.29f, 0.26f), n1 * 0.6f);
                 }
-                c *= 0.88f + 0.24f * n2;
-                // Bake a little slope shading so relief reads at RTS zoom.
                 float slope = w.Height.Slope(p);
                 c *= 1f - Mathf.Clamp01(slope * 0.35f) * 0.35f;
-                float h = w.HeightAt(p);
-                c *= 0.92f + Mathf.Clamp(h, -4f, 4f) * 0.02f;
-                c.a = 1f;
-                px[y * size + x] = c;
+                c *= 0.92f + Mathf.Clamp(w.Height.Get(x, z), -4f, 4f) * 0.02f;
+                vcol[z * n + x] = c;
+            }
+
+            int size = TextureSize;
+            float m2px = (float)w.Height.Size / size;
+            var px = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                float fz = (y + 0.5f) * m2px;
+                int iz = Mathf.Min((int)fz, n - 2);
+                float tz = fz - iz;
+                for (int x = 0; x < size; x++)
+                {
+                    float fx = (x + 0.5f) * m2px;
+                    int ix = Mathf.Min((int)fx, n - 2);
+                    float tx = fx - ix;
+                    int i0 = iz * n + ix;
+                    Color a = Color.LerpUnclamped(vcol[i0], vcol[i0 + 1], tx);
+                    Color b = Color.LerpUnclamped(vcol[i0 + n], vcol[i0 + n + 1], tx);
+                    Color c = Color.LerpUnclamped(a, b, tz);
+                    unchecked
+                    {
+                        uint h = (uint)x * 374761393u + (uint)y * 668265263u;
+                        h = (h ^ (h >> 13)) * 1274126177u;
+                        float speckle = ((h ^ (h >> 16)) & 0xFF) / 255f;
+                        c *= 0.9f + 0.18f * speckle;
+                    }
+                    c.a = 1f;
+                    px[y * size + x] = c;
+                }
             }
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
             tex.SetPixels32(px);

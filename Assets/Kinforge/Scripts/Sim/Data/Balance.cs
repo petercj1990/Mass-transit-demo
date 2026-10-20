@@ -83,7 +83,7 @@ namespace Kinforge.Sim
         // --- Economy ------------------------------------------------------------------------------
         public const float GatherRate = 1f;            // units per second per Vhorn
         public const float WarwrightQuarryBonus = 1.5f; // Warwrights quarry stone and ferrite faster
-        public const float SmeltSeconds = 3f;          // 2 ferrite -> 1 alloy
+        public const float SmeltSeconds = 4f;          // 2 ferrite -> 1 alloy
         public const float GatherReturnFraction = 0.9f;
 
         // --- World director -----------------------------------------------------------------------
