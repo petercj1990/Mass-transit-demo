@@ -109,7 +109,8 @@ Assets/Kinforge/Scripts/Sim     engine-agnostic simulation (world gen, AI, comba
 Assets/Kinforge/Scripts/Game    Unity layer: bootstrap, camera, input, views, effects, HUD
 Assets/Kinforge/Editor          first-open scene setup + Kinforge menu
 Tests/Kinforge.Sim.Tests        xUnit tests for the sim (dotnet test)
-Tools/SimLab                    balance lab: dotnet run -- fights | boss 10 3 2 | smoke 1 20 | learn
+Tools/SimLab                    balance lab: dotnet run -- fights | boss 10 3 2 | smoke 1 20 | learn | campaign 1337
+                                (frames / bossframes dump per-tick positions for top-down debug renders)
 Tools/UnityCompileCheck         compiles Assets/ against UnityEngine reference assemblies without the editor
 Tools/EditorCompileCheck        same for the editor script
 ```

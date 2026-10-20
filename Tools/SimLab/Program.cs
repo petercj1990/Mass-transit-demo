@@ -26,6 +26,8 @@ static class Program
             case "gather": GatherTest(); break;
             case "bake": BakeTiming(); break;
             case "campaign": Campaign.Run(Arg(1, 1337), Arg(2, 90), Arg(3, 0) != 0); break;
+            case "frames": Frames(args.Length > 1 ? args[1] : "frames.txt", Arg(2, 1), Arg(3, 0), Arg(4, 0), Arg(5, 60)); break;
+            case "bossframes": BossFrames(args.Length > 1 ? args[1] : "boss.txt", Arg(2, 500), Arg(3, 3)); break;
             case "trace": Trace(Arg(1, 1), Arg(2, 1), Arg(3, 0), Arg(4, 0)); break;
             default: Console.WriteLine("unknown mode"); return 1;
         }
@@ -261,6 +263,74 @@ static class Program
             }
         }
         Console.WriteLine(string.Join(", ", counts.Where(kv => kv.Key != SimEventType.Hit && kv.Key != SimEventType.Swing && kv.Key != SimEventType.Miss).Select(kv => $"{kv.Key}={kv.Value}")));
+    }
+
+    static void DumpFrame(System.IO.TextWriter o, World w)
+    {
+        o.WriteLine($"F {w.Time:0.00}");
+        foreach (var u in w.Units)
+        {
+            if (u.Life == LifeState.Dead && u.Faction == Faction.Enemy) continue;
+            if (u.Garrisoned) continue;
+            string tag = u.IsPlayer ? u.Role.ToString().Substring(0, 1) + (u.Squad?.ColorIndex ?? 0) : u.Kind.ToString().Substring(0, 2);
+            o.WriteLine($"U {(u.IsPlayer ? 'P' : 'E')} {tag} {u.Pos.X:0.00} {u.Pos.Z:0.00} {u.Radius:0.00} {u.HpFraction:0.00} {(int)u.Life} {u.Facing:0.00} {(u.Untargetable ? 1 : 0)}");
+        }
+        foreach (var s in w.Structures)
+        {
+            if (s.Removed || s.Kind == StructureKind.Building) continue;
+            o.WriteLine($"S {s.Kind} {s.Pos.X:0.00} {s.Pos.Z:0.00} {s.Dir.X:0.00} {s.Dir.Z:0.00} {s.HalfLen:0.00} {s.AreaRadius:0.00} {s.Faction}");
+        }
+        foreach (var t in w.Telegraphs)
+        {
+            if (t.Removed || t.Remaining <= 0f) continue;
+            o.WriteLine($"T {t.Shape} {t.Pos.X:0.00} {t.Pos.Z:0.00} {t.Dir.X:0.00} {t.Dir.Z:0.00} {t.Radius:0.00} {t.Length:0.00} {t.Width:0.00} {t.ArcDeg:0}");
+        }
+        foreach (var p in w.Projectiles)
+        {
+            if (p.Removed) continue;
+            o.WriteLine($"B {(p.Faction == Faction.Player ? 'P' : 'E')} {p.Pos.X:0.00} {p.Pos.Z:0.00}");
+        }
+    }
+
+    static void Frames(string path, int seed, int stance, int setup, int seconds)
+    {
+        var w = Scenarios.Blank(seed);
+        var sq = Scenarios.AddSquad(w, new Vec2(40f, 40f), 2, (CommandType)stance);
+        Scenarios.AddPack(w, new Vec2(40f, 62f), Setups[setup].kinds);
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = new Vec2(40f, 54f), Squads = { sq.Id } });
+        using var o = new System.IO.StreamWriter(path);
+        for (int t = 0; t < seconds * 20; t++)
+        {
+            w.Step();
+            if (t % 20 == 0) DumpFrame(o, w);
+            if (w.Reports.Count > 0 && t % 20 == 0) break;
+        }
+        Console.WriteLine(w.Reports.FirstOrDefault()?.Headline ?? "no result");
+    }
+
+    static void BossFrames(string path, int seed, int tier)
+    {
+        var w = Scenarios.BossArena(seed);
+        var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -26f), tier, CommandType.DefensiveFormation, 2);
+        var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -26f), tier, CommandType.DefensiveFormation, 2);
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
+        using var o = new System.IO.StreamWriter(path);
+        CommandType last = CommandType.DefensiveFormation;
+        for (int t = 0; t < 20 * 400 && !w.Victory; t++)
+        {
+            if (t % 10 == 0)
+            {
+                var boss = w.Boss;
+                CommandType want = CommandType.DefensiveFormation;
+                if (boss.Phase == 1) want = boss.VentsExposed || boss.Staggered ? CommandType.Charge : CommandType.SpreadOut;
+                else if (boss.Phase == 2) want = boss.MendersAlive > 0 ? CommandType.FocusFire : CommandType.DefensiveFormation;
+                else if (boss.Phase == 3) want = boss.BlastPending || boss.NextBlastIn < 2.5f ? CommandType.Stack : CommandType.Charge;
+                if (want != last) { w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want, Squads = { a.Id, b.Id } }); last = want; }
+            }
+            w.Step();
+            if (t % 10 == 0) DumpFrame(o, w);
+        }
+        Console.WriteLine(w.Victory ? "victory" : "no victory");
     }
 
     static void BakeTiming()

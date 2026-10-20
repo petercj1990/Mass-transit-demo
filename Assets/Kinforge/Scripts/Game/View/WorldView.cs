@@ -213,7 +213,7 @@ namespace Kinforge.Game
                     v = new TelegraphView(t, _fxRoot);
                     _telegraphs[t.Id] = v;
                 }
-                bool visible = _w.IsVisibleToPlayer(t.Pos) || t.Threatens == Faction.Player;
+                bool visible = _w.IsVisibleToPlayer(t.Pos);
                 v.Sync(_w, t, visible);
             }
             Prune(_telegraphs, v => v.Destroy());

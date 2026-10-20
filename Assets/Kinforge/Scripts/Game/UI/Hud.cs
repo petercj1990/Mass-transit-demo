@@ -330,7 +330,9 @@ namespace Kinforge.Game
                 float alpha = Mathf.Clamp01((10f - age) / 2f);
                 Color c = a.Severity == 3 ? new Color(1f, 0.82f, 0.35f) : a.Severity == 2 ? new Color(1f, 0.45f, 0.4f) : a.Severity == 1 ? new Color(1f, 0.8f, 0.5f) : new Color(0.88f, 0.9f, 0.92f);
                 var size = _label.CalcSize(new GUIContent(a.Text));
-                float width = Mathf.Min(W - 640, Mathf.Max(260, size.x + 30));
+                // Stay between the squad cards (left) and the objective/inspect column (right).
+                float maxWidth = 2f * Mathf.Min(W / 2f - 284f, W - 340f - W / 2f);
+                float width = Mathf.Clamp(size.x + 30, 260, Mathf.Max(260, maxWidth));
                 var r = new Rect(W / 2 - width / 2, y, width, 22);
                 var old = GUI.color;
                 GUI.color = new Color(1f, 1f, 1f, alpha);
