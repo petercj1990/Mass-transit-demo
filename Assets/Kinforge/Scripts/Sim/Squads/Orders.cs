@@ -23,6 +23,13 @@ namespace Kinforge.Sim
                 case OrderType.RecallCores:
                     w.Base?.HandleOrder(w, o);
                     return;
+                case OrderType.DebugDrill:
+                    foreach (int id in o.Squads)
+                    {
+                        var sq = w.FindSquad(id);
+                        if (sq != null) PlayerUnits.DebugDrill(w, sq, o.Arg);
+                    }
+                    return;
                 case OrderType.LockInstinct:
                 {
                     var u = w.FindUnitAny(o.TargetId);

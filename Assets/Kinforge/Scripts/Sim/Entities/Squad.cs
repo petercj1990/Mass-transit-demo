@@ -120,7 +120,11 @@ namespace Kinforge.Sim
             get
             {
                 float t = 0f;
-                foreach (var u in Members) t += u.CarryLoad;
+                foreach (var u in Members)
+                {
+                    // The dead can't unload at base, so their packs must not hold the squad's Return task open.
+                    if (u.Life != LifeState.Dead) t += u.CarryLoad;
+                }
                 return t;
             }
         }

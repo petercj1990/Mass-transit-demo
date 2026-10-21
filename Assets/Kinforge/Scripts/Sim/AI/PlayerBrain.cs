@@ -55,7 +55,7 @@ namespace Kinforge.Sim
                 if (!t.Contains(u.Pos, u.Radius)) continue;
                 if (growing) continue; // finish growing: the cast is short and the giant can take it
                 float reaction = c.P(InstinctParam.Reaction);
-                if (t.CoverBlocks && (!c.W.Nav.SightClear(t.Pos, u.Pos) || Titan.Shelters(c.W, t.Pos, u)))
+                if (t.CoverBlocks && (!c.W.Nav.SightClear(t.Pos, u.Pos) || Titan.IsSheltered(c.W, t.Pos, t.Radius, u)))
                 {
                     // Already behind a wall: stay there until it lands.
                     if (c.W.Time - t.CreatedAt >= reaction * 0.5f)
@@ -305,7 +305,8 @@ namespace Kinforge.Sim
             var boss = w.Boss;
             if (!w.TitanEnabled || u.TitanTime > 0f || c.Cmd == CommandType.Kite) return; // a slow giant cannot kite
             if (!c.Ready(AbilityId.TitanForm) || !Titan.HasRoom(w, u.Pos)) return;
-            bool bossFight = c.Boss != null && boss != null && boss.Active;
+            // Only squads at Breach Hold fight the boss; a squad in a fight elsewhere uses the normal rules.
+            bool bossFight = c.Boss != null && boss != null && boss.Active && w.InArena(u.Pos, 6f);
             int n8 = c.EnemiesWithin(u.Pos, 8f);
             float score = -1f;
             string why = null;
@@ -374,11 +375,15 @@ namespace Kinforge.Sim
             var w = c.W;
             if (w.Boss == null || !w.Boss.ClashReady(w)) return false;
             float grownR = c.U.Def.Radius * Balance.TitanScale;
+            float grownSpeed = Math.Max(0.5f, UnitMotor.BaseSpeed(c.U) * Balance.TitanSpeedMul);
+            // Time left once the cast is done and the next think has picked "Hold the line".
+            float overhead = AbilityDefs.Get(AbilityId.TitanForm).CastTime + Balance.ThinkInterval * Balance.Dt + 0.2f;
             foreach (var t in w.Telegraphs)
             {
                 if (t.Removed || !t.Catchable || t.Remaining < 0.75f) continue;
                 if (!TitanHoldPoint(c, t, grownR, out Vec2 hold)) continue;
-                if (Vec2.Distance(c.U.Pos, hold) <= TitanReach(c)) return true;
+                float d = Vec2.Distance(c.U.Pos, hold);
+                if (d <= TitanReach(c) && d / grownSpeed < t.Remaining - overhead) return true;
             }
             return false;
         }
@@ -426,18 +431,21 @@ namespace Kinforge.Sim
             if (t.Catchable)
             {
                 if (boss == null || u.TitanClashed || u.TitanTime <= 0.3f || !boss.ClashReady(w)) return false;
+                var owner = w.FindUnit(t.OwnerId);
+                float bossR = owner != null ? owner.Radius : 2.4f;
+                // The form must last until the charge gets here, or the giant shrinks mid-clash.
+                float ArrivesIn(float alongLane) => Math.Max(0f, t.Remaining) + Math.Max(0f, alongLane - bossR) / RustmawBoss.ChargeSpeed;
                 if (TitanReads(c) && TitanHoldPoint(c, t, u.Radius, out Vec2 hold))
                 {
                     float d = Vec2.Distance(u.Pos, hold);
-                    if (d <= TitanReach(c) && d / Math.Max(0.5f, UnitMotor.BaseSpeed(u)) < t.Remaining - 0.2f)
+                    if (d <= TitanReach(c) && d / Math.Max(0.5f, UnitMotor.BaseSpeed(u)) < t.Remaining - 0.2f
+                        && u.TitanTime > ArrivesIn(Vec2.Dot(hold - t.Pos, t.Dir)) + 0.1f)
                     {
                         u.TitanBraceUntil = w.Time + BraceHold;
                         c.Offer(97f, BrainContext.MoveTo(hold), c.Debug ? "Hold the line" : null);
                         return true;
                     }
                 }
-                var owner = w.FindUnit(t.OwnerId);
-                float bossR = owner != null ? owner.Radius : 2.4f;
                 Vec2 rel = u.Pos - t.Pos;
                 float along = Vec2.Dot(rel, t.Dir);
                 float lat = MathF.Abs(Vec2.Dot(rel, t.Dir.Right));
@@ -445,7 +453,8 @@ namespace Kinforge.Sim
                 // Rustmaw crash into it, unless it is close enough behind the giant to make an anvil.
                 float wallAlong = Titan.FirstBlockAlong(w, t.Pos, t.Dir, t.Length, bossR * 0.7f, true, out _);
                 bool spoilsCrash = wallAlong > along && wallAlong - along > u.Radius + 3f;
-                if (!spoilsCrash && lat <= 2.5f && along >= bossR + 0.5f && along <= t.Length + u.Radius)
+                if (!spoilsCrash && lat <= 2.5f && along >= bossR + 0.5f && along <= t.Length + u.Radius
+                    && u.TitanTime > ArrivesIn(along) + 0.1f)
                 {
                     u.TitanBraceUntil = w.Time + BraceHold;
                     c.Offer(97f, BrainContext.MoveTo(u.Pos), c.Debug ? "Stand firm" : null);
@@ -456,6 +465,8 @@ namespace Kinforge.Sim
             if (t.CoverBlocks && c.Boss != null && TitanShelterReads(c))
             {
                 Vec2 stack = ShelterStack(c);
+                // Only a blast that reaches this squad matters; a giant fighting elsewhere keeps fighting.
+                if (Vec2.Distance(u.Pos, t.Pos) > t.Radius + u.Radius + 2f && Vec2.Distance(stack, t.Pos) > t.Radius + 2f) return false;
                 if (!w.Nav.SightClear(t.Pos, stack)) return false; // a wall already covers the stack
                 Vec2 toBoss = (t.Pos - stack).Normalized;
                 if (toBoss == Vec2.Zero) toBoss = c.Fwd;
@@ -467,7 +478,11 @@ namespace Kinforge.Sim
             return false;
         }
 
-        /// <summary>A brace lasts a little longer than one think, so it holds until the AI next decides.</summary>
+        /// <summary>
+        /// A brace lasts a little longer than one think, so it holds until the AI next decides. The
+        /// boss checks it against the moment the charge started, so a brace held through the tell
+        /// still counts while Rustmaw covers the lane.
+        /// </summary>
         private const float BraceHold = 0.5f;
 
         private static Vec2 ShelterStack(BrainContext c) => c.Cmd == CommandType.Stack ? c.Anchor : c.Center;
@@ -477,6 +492,7 @@ namespace Kinforge.Sim
         {
             var boss = c.W.Boss;
             if (boss == null || !boss.Overheated || !(boss.BlastPending || boss.NextBlastIn < 2f)) return false;
+            if (!c.W.InArena(c.U.Pos, 6f)) return false;
             return c.W.Nav.SightClear(c.Boss.Pos, ShelterStack(c));
         }
 

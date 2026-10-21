@@ -253,6 +253,7 @@ namespace Kinforge.Sim
                 for (var slot = PlayerUnits.RefreshAbilitySlots(m); slot != null; slot = PlayerUnits.RefreshAbilitySlots(m))
                 {
                     var d = slot.Def;
+                    if (d.Id == AbilityId.TitanForm && !w.TitanEnabled) continue; // switched off: open it silently
                     report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = $"unlocked {d.Name}", Kind = 1 });
                     w.Emit(SimEventType.AbilityUnlocked, m.Id, 0, m.Pos, 0f, DamageType.Kinetic, d.Id);
                     if (d.Id == AbilityId.TitanForm)

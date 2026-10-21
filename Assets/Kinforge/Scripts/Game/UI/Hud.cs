@@ -140,7 +140,7 @@ namespace Kinforge.Game
                 hover = { background = Tex.Solid(new Color(0.12f, 0.12f, 0.13f, 0.9f)), textColor = new Color(0.55f, 0.55f, 0.55f) },
             };
             _bar = new GUIStyle { normal = { background = Tex.White } };
-            _floatStyle = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _floatStyle = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow, wordWrap = false };
             _tooltip = new GUIStyle(_label) { fontSize = 12, wordWrap = true, normal = { background = Tex.Solid(new Color(0.03f, 0.03f, 0.04f, 0.92f)), textColor = Color.white }, padding = new RectOffset(6, 6, 4, 4) };
             _hidden = new GUIStyle();
             _tinyBold = new GUIStyle(_tiny) { fontStyle = FontStyle.Bold };

@@ -113,17 +113,20 @@ scripted fights. Current Rustmaw results over 10 runs (2 squads, ferrite gear):
 Against open-world camps a fresh squad wins most fights; Rockbacks punish Charge and Focus Fire at low tiers (about 30%
 wins) while Defensive Formation, Hold, Kite and Fortify win.
 
-Titan Form, measured with paired seeds (same worlds with the ability on and off; `titan` = flat arena, 100 seeds;
-`raid` = real generated Breach Holds, 200 worlds; ferrite gear):
+Titan Form, measured with paired seeds (the same worlds with the ability on and off, ferrite gear). `titan` is the flat
+test arena (100 seeds); `raid` is real generated Breach Holds with terrain and walls (200-300 worlds), either with every
+command trained to the tier shown or, like the campaign bot's squads, only Defensive Formation:
 
-| Squad tiers | Passive commander, off / on | Commander reading the phases, off / on | Real Breach Holds, off / on | Charges stopped per raid |
-| --- | --- | --- | --- | --- |
-| 3 and 2 (a typical first raid: one Titan) | 42% / 52% | 80% / 77% | 60% / 60% | about 0.5 |
-| 3 and 3 (two Titans) | 61% / 59% | 78% / 91% | 65% / 81% | about 0.9 |
+| Squad tiers | Flat arena: passive commander | Flat arena: commander reading the phases | Real holds, all commands trained | Real holds, Defensive Formation only | Charges stopped per raid |
+| --- | --- | --- | --- | --- | --- |
+| 3 and 2 (a typical first raid: one Titan) | 42% > 50% | 80% > 78% | 60% > 59% | 78% > 85% | about 0.6 |
+| 3 and 3 (two Titans) | 61% > 68% | 78% > 92% | 65% > 84% | 87% > 90% | about 1.1 |
 
-With one Titan the raid is about as hard as before but bigger moments happen; two veteran Titans make it clearly
-easier, and the gap between a passive and an attentive commander grows rather than shrinks. All seven campaign seeds
-tried (1337, 7, 42, 99, 5, 3, 11) still end in victory, with Titan Form unlocking between 17:52 and 24:00.
+With one Titan the raid is about as hard as before (within noise) but has bigger moments; two veteran Titans make it
+clearly easier, and an attentive commander still gains far more than a passive one. All nine campaign seeds tried
+(1337, 7, 42, 99, 5, 3, 11, 1, 2) end in victory with the ability on and off; the first Titan unlocks between 17:52
+and 24:39. Single campaigns swing either way (a few seconds' difference early on changes everything after), so judge
+balance from the paired runs.
 
 ## Project layout
 
@@ -133,7 +136,7 @@ Assets/Kinforge/Scripts/Game    Unity layer: bootstrap, camera, input, views, ef
 Assets/Kinforge/Editor          first-open scene setup + Kinforge menu
 Tests/Kinforge.Sim.Tests        xUnit tests for the sim (dotnet test)
 Tools/SimLab                    balance lab: dotnet run -- fights | boss 10 3 2 | smoke 1 20 | learn | campaign 1337
-                                titan 100 3 2 2 / raid 200 3 2 2 (Titan Form on vs off); KF_TITAN=0 switches it off
+                                titan 100 3 2 2 / raid 200 3 2 2 [1] (Titan Form on vs off); KF_TITAN=0 switches it off
                                 (frames / bossframes dump per-tick positions for top-down debug renders)
 Tools/UnityCompileCheck         compiles Assets/ against UnityEngine reference assemblies without the editor
 Tools/EditorCompileCheck        same for the editor script

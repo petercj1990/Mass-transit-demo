@@ -22,6 +22,8 @@ namespace Kinforge.Sim
         // Unit-level learning controls
         LockInstinct,
         ResetInstinct,
+        // Playtest only: drill the squads to Doctrine tier Arg (F7)
+        DebugDrill,
     }
 
     public sealed class PlayerOrder

@@ -116,7 +116,10 @@ namespace Kinforge.Sim
                 if (m.Doctrine == null) continue;
                 m.Doctrine.SeedTier(tier);
                 for (var slot = RefreshAbilitySlots(m); slot != null; slot = RefreshAbilitySlots(m))
+                {
+                    if (slot.Def.Id == AbilityId.TitanForm && !w.TitanEnabled) continue;
                     w.Emit(SimEventType.AbilityUnlocked, m.Id, 0, m.Pos, 0f, DamageType.Kinetic, slot.Def.Id);
+                }
             }
             w.Alert($"{sq.Name} drilled to Doctrine tier {tier} in every command (playtest key F7).", sq.Centroid, 1);
         }

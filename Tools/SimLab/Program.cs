@@ -9,7 +9,8 @@ using Kinforge.Sim;
 //   dotnet run -- boss [runs] [tier] [gear]
 //   dotnet run -- learn [fights]
 //   dotnet run -- titan [runs] [tierA] [tierB] [gear]   Titan Form on vs off in the Rustmaw raid
-//   dotnet run -- raid [worlds] [tierA] [tierB] [gear]   same, in real generated Breach Holds (terrain, walls, hatch)
+//   dotnet run -- raid [worlds] [tierA] [tierB] [gear] [dfOnly]   same, in real generated Breach Holds (terrain, walls, hatch);
+//                                                     dfOnly=1 trains only Defensive Formation, like the campaign bot's squads
 //   dotnet run -- trace
 static class Program
 {
@@ -34,7 +35,7 @@ static class Program
             case "frames": Frames(args.Length > 1 ? args[1] : "frames.txt", Arg(2, 1), Arg(3, 0), Arg(4, 0), Arg(5, 60)); break;
             case "bossframes": BossFrames(args.Length > 1 ? args[1] : "boss.txt", Arg(2, 500), Arg(3, 3)); break;
             case "titan": TitanAb(Arg(1, 40), Arg(2, 3), Arg(3, 2), Arg(4, 2)); break;
-            case "raid": RealRaids(Arg(1, 40), Arg(2, 3), Arg(3, 2), Arg(4, 2)); break;
+            case "raid": RealRaids(Arg(1, 40), Arg(2, 3), Arg(3, 2), Arg(4, 2), Arg(5, 0) != 0); break;
             case "trace": Trace(Arg(1, 1), Arg(2, 1), Arg(3, 0), Arg(4, 0)); break;
             default: Console.WriteLine("unknown mode"); return 1;
         }
@@ -563,7 +564,7 @@ static class Program
     }
 
     /// <summary>Runs the smart raid commander in a real generated world's Breach Hold.</summary>
-    static TitanStats RealRaid(int seed, int tierA, int tierB, int gear, bool titan)
+    static TitanStats RealRaid(int seed, int tierA, int tierB, int gear, bool titan, bool dfOnly = false)
     {
         var st = new TitanStats { Runs = 1 };
         var w = World.Create(seed);
@@ -571,8 +572,20 @@ static class Program
         w.Boss.OpenGate(w);
         Vec2 outward = (w.BasePos - w.ArenaCenter).Normalized;
         Vec2 outside = w.ArenaCenter + outward * (w.ArenaRadius + 8f);
-        var a = Scenarios.AddSquad(w, w.Nav.NearestWalkable(outside + outward.Right * 4f, 6), tierA, CommandType.DefensiveFormation, gear);
-        var b = Scenarios.AddSquad(w, w.Nav.NearestWalkable(outside - outward.Right * 4f, 6), tierB, CommandType.DefensiveFormation, gear);
+        Squad Make(Vec2 at, int tier)
+        {
+            if (!dfOnly) return Scenarios.AddSquad(w, at, tier, CommandType.DefensiveFormation, gear);
+            // Campaign-like Doctrine: veterans in Defensive Formation, untrained in everything else.
+            var sq = Scenarios.AddSquad(w, at, 0, CommandType.DefensiveFormation, gear);
+            foreach (var m in sq.Members)
+            {
+                m.Doctrine.Banked[(int)CommandType.DefensiveFormation] = Balance.DoctrineTierXp[tier];
+                while (PlayerUnits.RefreshAbilitySlots(m) != null) { }
+            }
+            return sq;
+        }
+        var a = Make(w.Nav.NearestWalkable(outside + outward.Right * 4f, 6), tierA);
+        var b = Make(w.Nav.NearestWalkable(outside - outward.Right * 4f, 6), tierB);
         var ids = new[] { a.Id, b.Id };
         w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + outward * 10f, Squads = { a.Id, b.Id } });
         int t = 0;
@@ -629,13 +642,13 @@ static class Program
         return st;
     }
 
-    static void RealRaids(int worlds, int tierA, int tierB, int gear)
+    static void RealRaids(int worlds, int tierA, int tierB, int gear, bool dfOnly)
     {
-        Console.WriteLine($"Real-world raids: {worlds} generated worlds, smart commander, squad tiers {tierA}/{tierB}, gear {gear}");
+        Console.WriteLine($"Real-world raids: {worlds} generated worlds, smart commander, squad tiers {tierA}/{tierB}{(dfOnly ? " (Defensive Formation only)" : "")}, gear {gear}");
         foreach (bool titan in new[] { false, true })
         {
             var results = new TitanStats[worlds];
-            System.Threading.Tasks.Parallel.For(0, worlds, i => results[i] = RealRaid(1000 + i, tierA, tierB, gear, titan));
+            System.Threading.Tasks.Parallel.For(0, worlds, i => results[i] = RealRaid(1000 + i, tierA, tierB, gear, titan, dfOnly));
             PrintTitan($"smart   titan {(titan ? "ON " : "off")}", results);
         }
     }

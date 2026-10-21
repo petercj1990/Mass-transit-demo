@@ -37,6 +37,7 @@ namespace Kinforge.Sim.Tests
             Assert.Null(PlayerUnits.RefreshAbilitySlots(tank));
             tank.Doctrine.LoseUnbanked();
             Assert.True(tank.Doctrine.MaxTier < 3);
+            Assert.Null(PlayerUnits.RefreshAbilitySlots(tank)); // the refresh never closes a slot
             Assert.True(TitanSlot(tank).Unlocked);
         }
 
@@ -105,6 +106,7 @@ namespace Kinforge.Sim.Tests
             StructureSystem.SpawnRampart(w, sq.Member(Role.Warwright), new Vec2(40.5f, 41.6f), new Vec2(1f, 0f), 9f);
             StructureSystem.SpawnRampart(w, sq.Member(Role.Warwright), new Vec2(40.5f, 39.4f), new Vec2(1f, 0f), 9f);
             Assert.False(Titan.HasRoomNear(w, tank.Pos));
+            sq.InCombat = true;
             Titan.Begin(w, tank);
             Assert.Equal(0f, tank.TitanTime);
             Assert.Equal(Balance.TitanFizzleCooldown, TitanSlot(tank).Cooldown);
@@ -129,15 +131,26 @@ namespace Kinforge.Sim.Tests
             Assert.Null(Titan.CheckInvariants(w));
 
             GrowFully(w, tank);
-            Assert.True(tank.TitanTime > 0f || TitanSlot(tank).Cooldown > 0f);
-            TitanSlot(tank).Cooldown = 0f;
-            GrowFully(w, tank);
             Assert.Equal(1f, tank.TitanT);
+            Assert.False(ActionSystem.StartAbility(w, tank, AbilityId.TitanForm, 0, tank.Pos, Vec2.Forward)); // cooling down
             SquadSystem.Garrison(w, sq);
             Assert.True(tank.Garrisoned);
             Assert.Equal(0f, tank.TitanT);
             Assert.Equal(tank.Def.Radius, tank.Radius);
             Assert.Null(Titan.CheckInvariants(w));
+        }
+
+        [Fact]
+        public void Growing_as_the_squad_marches_off_fizzles_without_the_full_cooldown()
+        {
+            var w = Scenarios.Blank(1);
+            var sq = VeteranSquad(w, new Vec2(30f, 30f));
+            var tank = sq.Member(Role.Tank);
+            sq.InCombat = false; // the fight ended during the cast
+            Titan.Begin(w, tank);
+            Assert.Equal(0f, tank.TitanTime);
+            Assert.Equal(Balance.TitanFizzleCooldown, TitanSlot(tank).Cooldown);
+            Assert.Contains(w.Events, e => e.Type == SimEventType.TitanFade && e.Value == Titan.FadeLeftFight);
         }
 
         [Fact]
@@ -377,6 +390,54 @@ namespace Kinforge.Sim.Tests
             Assert.True(tank.TitanBraceUntil > w.Time);
             float lat = System.MathF.Abs(Vec2.Dot(tank.Intent.Point - w.ArenaCenter, dir.Right));
             Assert.True(lat < 1f, $"hold point {lat:0.00} m off the lane centre");
+        }
+
+        [Fact]
+        public void A_braced_titan_far_down_the_lane_still_stops_the_charge()
+        {
+            // The AI braces during the tell (nothing set by hand) and Rustmaw needs most of a second to arrive.
+            var (w, sq, dir) = RaidAtPhase1(4, CommandType.HoldPosition);
+            var tank = sq.Member(Role.Tank);
+            tank.Pos = w.ArenaCenter + dir * 15f;
+            sq.Member(Role.Healer).Pos = w.ArenaCenter + dir * 19f;
+            GrowFully(w, tank);
+            w.Boss.DebugChargeWindupAt(w, dir, 25f);
+            bool clashed = false;
+            for (int i = 0; i < 20 * 4 && !clashed; i++)
+            {
+                w.Step();
+                clashed = w.Events.Any(e => e.Type == SimEventType.TitanClash && e.A == tank.Id);
+            }
+            Assert.True(clashed);
+        }
+
+        [Fact]
+        public void With_titan_form_off_no_tank_ever_grows()
+        {
+            var w = Scenarios.BossArena(7);
+            w.TitanEnabled = false;
+            var a = VeteranSquad(w, w.ArenaCenter + new Vec2(-6f, -30f), 4);
+            var b = VeteranSquad(w, w.ArenaCenter + new Vec2(6f, -30f), 4);
+            w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
+            for (int i = 0; i < 20 * 90; i++)
+            {
+                w.Step();
+                Assert.DoesNotContain(w.Events, e => (e.Type == SimEventType.AbilityCast && e.Ability == AbilityId.TitanForm)
+                                                     || e.Type == SimEventType.TitanRise || e.Type == SimEventType.TitanFade
+                                                     || (e.Type == SimEventType.AbilityUnlocked && e.Ability == AbilityId.TitanForm));
+                Assert.All(w.Units, u => Assert.Equal(0f, u.TitanT));
+            }
+        }
+
+        [Fact]
+        public void A_squad_whose_carrier_died_can_finish_returning_home()
+        {
+            var w = Scenarios.Blank(1);
+            var sq = Scenarios.AddSquad(w, new Vec2(30f, 30f), 0, CommandType.DefensiveFormation);
+            var bruiser = sq.Member(Role.Melee);
+            bruiser.Carry.Add(ResourceKind.Ferrite, 10f);
+            bruiser.Life = LifeState.Dead;
+            Assert.Equal(0f, sq.CarryLoad);
         }
 
         [Fact]

@@ -56,6 +56,10 @@ namespace Kinforge.Sim
         private readonly List<Unit> _scratch = new List<Unit>(16);
         private readonly Dictionary<int, int> _shelteredBy = new Dictionary<int, int>();
         private float _clashImmuneUntil = -999f;
+        private float _chargeStartedAt = -999f;
+
+        public const float ChargeSpeed = 18f;
+        public const float BlastRadius = 16f;
 
         public bool Active => Phase >= 1 && Phase <= 3 && !Defeated;
         public bool VentsExposed => _ventsTime > 0f;
@@ -152,6 +156,25 @@ namespace Kinforge.Sim
             _chargeHit.Clear();
             Body.Facing = _chargeDir.ToAngle();
             _state = State.Charging;
+            _chargeStartedAt = w.Time;
+        }
+
+        /// <summary>Test helper: start a full charge tell (telegraph and windup) along <paramref name="dir"/>.</summary>
+        public void DebugChargeWindupAt(World w, Vec2 dir, float length)
+        {
+            if (Phase != 1 && Phase != 2) return;
+            _chargeDir = dir.Normalized;
+            _chargeLeft = length;
+            _chargeCd = 9f;
+            _state = State.ChargeWindup;
+            _stateTimer = 1.7f;
+            Body.Action = UnitAction.None;
+            var t = w.AddTelegraph(new Telegraph
+            {
+                Shape = TelegraphShape.Line, Pos = Body.Pos, Dir = _chargeDir, Length = _chargeLeft, Width = 4.6f,
+                Duration = 1.7f, Threatens = Faction.Player, OwnerId = Body.Id, Label = "Line Charge", Catchable = true,
+            });
+            _telegraphId = t.Id;
         }
 
         /// <summary>Test helper: release a fire wave now (phase 3).</summary>
@@ -223,6 +246,7 @@ namespace Kinforge.Sim
                     if (_stateTimer <= 0f)
                     {
                         _state = State.Charging;
+                        _chargeStartedAt = w.Time;
                         _chargeHit.Clear();
                         Body.Facing = _chargeDir.ToAngle();
                         w.Emit(SimEventType.BossCharge, Body.Id, 0, Body.Pos);
@@ -428,8 +452,7 @@ namespace Kinforge.Sim
         private void Charge(World w, float dt)
         {
             Body.Intent = default;
-            float speed = 18f;
-            float move = Math.Min(speed * dt, _chargeLeft);
+            float move = Math.Min(ChargeSpeed * dt, _chargeLeft);
             int steps = Math.Max(1, (int)Math.Ceiling(move / 0.4f));
             float step = move / steps;
             for (int s = 0; s < steps; s++)
@@ -469,7 +492,7 @@ namespace Kinforge.Sim
                 }
                 if (w.Time >= _clashImmuneUntil)
                 {
-                    var giant = Titan.ChargeBlocker(w, Body, next, _chargeDir);
+                    var giant = Titan.ChargeBlocker(w, Body, next, _chargeDir, _chargeStartedAt);
                     if (giant != null)
                     {
                         Clash(w, giant, nose);
@@ -655,7 +678,7 @@ namespace Kinforge.Sim
             Combat.Interrupt(w, Body);
             var t = w.AddTelegraph(new Telegraph
             {
-                Shape = TelegraphShape.Circle, Pos = Body.Pos, Radius = 16f, Duration = 2.6f, Threatens = Faction.Player,
+                Shape = TelegraphShape.Circle, Pos = Body.Pos, Radius = BlastRadius, Duration = 2.6f, Threatens = Faction.Player,
                 OwnerId = Body.Id, Label = "Fire Wave", CoverBlocks = true,
             });
             _telegraphId = t.Id;
@@ -666,11 +689,11 @@ namespace Kinforge.Sim
             _state = State.Chase;
             _blastCd = 8.5f;
             float dmg = 130f * DamageDealtMultiplier;
-            Titan.ComputeShelter(w, Body.Pos, _shelteredBy, _scratch);
+            Titan.ComputeShelter(w, Body.Pos, BlastRadius, _shelteredBy, _scratch);
             foreach (var u in w.Units.ToArray())
             {
                 if (!u.IsPlayer || !u.IsTargetable) continue;
-                if (Vec2.Distance(u.Pos, Body.Pos) > 16f + u.Radius) continue;
+                if (Vec2.Distance(u.Pos, Body.Pos) > BlastRadius + u.Radius) continue;
                 if (!w.Nav.SightClear(Body.Pos, u.Pos)) continue; // behind a wall
                 float mul = 1f;
                 if (_shelteredBy.TryGetValue(u.Id, out int titanId))
@@ -686,7 +709,7 @@ namespace Kinforge.Sim
             foreach (var s in w.Structures.ToArray())
             {
                 if (s.Removed || s.Faction != Faction.Player || !s.IsTargetable) continue;
-                if (Vec2.Distance(s.Pos, Body.Pos) <= 16f) Combat.Deal(w, Body, s, 80f, DamageType.Thermal, HitFlags.Ability);
+                if (Vec2.Distance(s.Pos, Body.Pos) <= BlastRadius) Combat.Deal(w, Body, s, 80f, DamageType.Thermal, HitFlags.Ability);
             }
             w.Emit(SimEventType.BossBlast, Body.Id, 0, Body.Pos, 16f, DamageType.Thermal);
         }

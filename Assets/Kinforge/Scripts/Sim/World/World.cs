@@ -78,6 +78,10 @@ namespace Kinforge.Sim
         internal readonly List<Unit> AbilityScratch = new List<Unit>(16);
         internal readonly List<Unit> FieldScratch = new List<Unit>(16);
         internal int PathsThisTick;
+        internal readonly Dictionary<int, int> ShelterScratch = new Dictionary<int, int>();
+        internal readonly List<Unit> ShelterList = new List<Unit>(16);
+        internal int ShelterTick = -1;
+        internal Vec2 ShelterSrc;
 
         private readonly Dictionary<int, Entity> _entities = new Dictionary<int, Entity>();
         private int _nextId = 1;

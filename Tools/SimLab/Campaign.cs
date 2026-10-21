@@ -224,7 +224,7 @@ static class Campaign
                         kind = i;
                     }
                 }
-                if (kind < 0 || (remaining.Count == 0 && !trained)) kind = (int)ResourceKind.Hide; // nothing to buy: go train
+                if (kind < 0 || (remaining.Count == 0 && !trained && best < 1f)) kind = (int)ResourceKind.Hide; // nothing to buy or regrow: go train
                 if (kind == (int)ResourceKind.Hide)
                 {
                     int maxTier = sq.Members.Average(m => m.Doctrine.Tier(CommandType.DefensiveFormation)) >= 1.5 && sq.ArmorTier > 1 ? 2 : 1;

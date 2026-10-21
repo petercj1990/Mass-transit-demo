@@ -41,15 +41,20 @@ namespace Kinforge.Sim
             return false;
         }
 
-        /// <summary>The cast has finished: grow, or fizzle if there is no room (or the feature is off).</summary>
+        /// <summary>
+        /// The cast has finished: grow, or fizzle (short cooldown) if there is no room, the feature is
+        /// off, or the squad started marching or left the fight during the cast, when the form would
+        /// end at once anyway.
+        /// </summary>
         public static void Begin(World w, Unit u)
         {
             var slot = u.Slot(AbilityId.TitanForm);
             var def = AbilityDefs.Get(AbilityId.TitanForm);
-            if (!w.TitanEnabled || !HasRoomNear(w, u.Pos))
+            bool leaving = u.Squad != null && (SquadSystem.IsMarching(w, u.Squad) || !u.Squad.InCombat);
+            if (!w.TitanEnabled || leaving || !HasRoomNear(w, u.Pos))
             {
                 if (slot != null) slot.Cooldown = Balance.TitanFizzleCooldown;
-                w.Emit(SimEventType.TitanFade, u.Id, 0, u.Pos, FadeNoRoom);
+                w.Emit(SimEventType.TitanFade, u.Id, 0, u.Pos, leaving ? FadeLeftFight : FadeNoRoom);
                 return;
             }
             // The full cooldown starts only now, so a dodge, stun or knockback during the cast never wastes it.
@@ -58,6 +63,9 @@ namespace Kinforge.Sim
             u.TitanEndReason = FadeTimer;
             u.TitanClashed = false;
             u.TitanStuck = 0f;
+            // Repath at once with a clearance-aware route for the bigger body.
+            u.Path.Clear();
+            u.PathTime = -999f;
 
             // Challenge: everything close turns on the giant for a moment.
             var hits = w.AbilityScratch;
@@ -69,7 +77,9 @@ namespace Kinforge.Sim
             if (!w.TitanSeen)
             {
                 w.TitanSeen = true;
-                w.Alert($"{u.Name} rises as a Titan! Enemies bog down at its shield, shots slam into it, Rustmaw's charge breaks on it, and kin behind it are sheltered from fire waves. The tank decides when.", u.Pos, 3);
+                // Two short alerts: the alert strip is a single line.
+                w.Alert($"{u.Name} rises as a Titan! It breaks Rustmaw's charge and shelters kin behind it.", u.Pos, 3);
+                w.Alert("A Titan slows enemies at its shield and catches shots aimed past it.", u.Pos, 1);
             }
         }
 
@@ -162,16 +172,17 @@ namespace Kinforge.Sim
 
         /// <summary>
         /// A grown Shieldbearer braced in the nose of Rustmaw's charge, nearest first. Only a braced
-        /// giant (one whose AI chose to meet the charge) stops it; one caught by surprise is trampled.
+        /// giant (one whose AI chose to meet this charge, i.e. was still braced when the charge
+        /// started) stops it; one caught by surprise is trampled.
         /// </summary>
-        public static Unit ChargeBlocker(World w, Unit boss, Vec2 next, Vec2 dir)
+        public static Unit ChargeBlocker(World w, Unit boss, Vec2 next, Vec2 dir, float chargeStartedAt)
         {
             Unit best = null;
             float bestAlong = float.MaxValue;
             foreach (var u in w.Units)
             {
                 if (!u.IsPlayer || !u.IsTargetable || u.TitanTime <= 0f || u.TitanClashed || u.Status.Disabled) continue;
-                if (w.Time > u.TitanBraceUntil) continue;
+                if (u.TitanBraceUntil < chargeStartedAt) continue;
                 Vec2 d = u.Pos - next;
                 float along = Vec2.Dot(d, dir);
                 float lat = MathF.Abs(Vec2.Dot(d, dir.Right));
@@ -223,19 +234,27 @@ namespace Kinforge.Sim
             return Vec2.DistanceToSegment(src, p, t.Pos) <= t.Radius + Balance.TitanShelterPad;
         }
 
-        /// <summary>True if any grown Titan shelters <paramref name="u"/> from a blast at <paramref name="src"/>.</summary>
-        public static bool Shelters(World w, Vec2 src, Unit u)
+        /// <summary>
+        /// Would <paramref name="u"/> be sheltered by a Titan from a blast at <paramref name="src"/> right
+        /// now? Uses the same capped answer as the blast itself, so kin past the cap know to move.
+        /// Cached per tick and blast position in per-world scratch.
+        /// </summary>
+        public static bool IsSheltered(World w, Vec2 src, float reach, Unit u)
         {
-            foreach (var t in w.Units)
+            if (w.ShelterTick != w.Tick || w.ShelterSrc != src)
             {
-                if (t == u || t.TitanT <= 0f || !t.IsPlayer || !t.IsTargetable) continue;
-                if (InShadow(t, src, u.Pos)) return true;
+                w.ShelterTick = w.Tick;
+                w.ShelterSrc = src;
+                ComputeShelter(w, src, reach, w.ShelterScratch, w.ShelterList);
             }
-            return false;
+            return w.ShelterScratch.ContainsKey(u.Id);
         }
 
-        /// <summary>Who each Titan shelters from a blast at <paramref name="src"/>: up to the cap per Titan, nearest first.</summary>
-        public static void ComputeShelter(World w, Vec2 src, Dictionary<int, int> shelteredBy, List<Unit> scratch)
+        /// <summary>
+        /// Who each Titan shelters from a blast at <paramref name="src"/>: up to the cap per Titan, nearest
+        /// first, counting only kin the blast would actually hit (in reach, not already behind a wall).
+        /// </summary>
+        public static void ComputeShelter(World w, Vec2 src, float reach, Dictionary<int, int> shelteredBy, List<Unit> scratch)
         {
             shelteredBy.Clear();
             foreach (var t in w.Units)
@@ -245,6 +264,7 @@ namespace Kinforge.Sim
                 foreach (var u in w.Units)
                 {
                     if (u == t || !u.IsPlayer || !u.IsTargetable || shelteredBy.ContainsKey(u.Id)) continue;
+                    if (Vec2.Distance(u.Pos, src) > reach + u.Radius || !w.Nav.SightClear(src, u.Pos)) continue;
                     if (InShadow(t, src, u.Pos)) scratch.Add(u);
                 }
                 scratch.Sort((a, b) =>

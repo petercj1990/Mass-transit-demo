@@ -384,14 +384,13 @@ namespace Kinforge.Game
             if (Keys.Down(KeyCode.Escape)) hud.Escape();
 
             // Playtest helpers
-            if (Keys.Down(KeyCode.F7))
+            if (Keys.Down(KeyCode.F7) && _game.Selection.Squads.Count > 0)
             {
                 // Playtest drill: selected squads jump to Doctrine tier 3 (opens the Shieldbearer's Titan Form).
-                foreach (int id in _game.Selection.Squads)
-                {
-                    var sq = W.FindSquad(id);
-                    if (sq != null) PlayerUnits.DebugDrill(W, sq, Balance.FourthAbilityTier);
-                }
+                // Sent as an order so its unlock events reach the view on the next tick.
+                var drill = new PlayerOrder { Type = OrderType.DebugDrill, Arg = Balance.FourthAbilityTier };
+                drill.Squads.AddRange(_game.Selection.Squads);
+                W.Issue(drill);
             }
             if (Keys.Down(KeyCode.F8)) _game.Rig.EdgeScroll = !_game.Rig.EdgeScroll;
             if (Keys.Down(KeyCode.F9)) _game.CycleSpeed();

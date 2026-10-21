@@ -59,7 +59,11 @@ namespace Kinforge.Game
                 Visible = visible;
                 Model.Root.SetActive(visible);
             }
-            if (!visible) return;
+            if (!visible)
+            {
+                _titanVis = u.TitanT; // e.g. garrisoned: come back out at the size the sim says
+                return;
+            }
 
             float now = Time.time;
             Vec2 p = Vec2.Lerp(u.PrevPos, u.Pos, alpha);
@@ -70,8 +74,10 @@ namespace Kinforge.Game
             _yaw = Mathf.LerpAngle(_yaw, u.Facing * Mathf.Rad2Deg, 1f - Mathf.Exp(-14f * dt));
             root.rotation = Quaternion.Euler(0f, _yaw, 0f);
 
-            // Grow with the sim's ramp; shrink smoothly even when the form ends at once (felled, garrisoned).
-            _titanGrowing = u.TitanT >= _titanVis;
+            // Grow with the sim's ramp while the form is up; once it is over, shrink smoothly even when it
+            // ended at once (felled). The direction comes from sim state, steady between ticks, so the
+            // easing curve never flips from frame to frame.
+            _titanGrowing = u.TitanTime > 0f;
             _titanVis = _titanGrowing ? u.TitanT : Mathf.MoveTowards(_titanVis, u.TitanT, dt * 2.5f);
             _flex = Mathf.Max(0f, _flex - dt);
 
