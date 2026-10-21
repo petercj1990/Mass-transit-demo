@@ -31,7 +31,7 @@ The world uses a fixed seed (1337) so feedback is comparable. The help screen (F
 | Combat commands | Z Charge, X Defensive Formation, C Hold Position, V Kite, B Focus Fire, N Spread Out, M Stack, G Fall Back, T Fortify, R Rest |
 | Orders | H return home and deposit, J garrison, K stop |
 | Panels | F1 help, F2 clan base, F3 battle reports, Esc closes; click a unit to inspect it, click a building for the base |
-| Playtest helpers | F9 game speed x1/x2/x4, F10 skip Rustmaw to its next phase, F11 reveal map |
+| Playtest helpers | F7 drill the selected kin-bands to Doctrine tier 3 (unlocks Titan Form at once), F9 game speed x1/x2/x4, F10 skip Rustmaw to its next phase, F11 reveal map |
 
 The player never casts abilities: units pick targets, positions and abilities themselves under the command you set.
 The game never pauses (F9 speed-up exists only for testing).
@@ -44,16 +44,21 @@ The game never pauses (F9 speed-up exists only for testing).
 3. Open the base (F2), upgrade the War Hall and recruit a second kin-band (fresh recruits start at Doctrine tier 0).
 4. Garrison a squad (J) so the Smelter turns ferrite into alloy and the Salvage Bench crafts ferrite arms and plate.
 5. Craft the Breach Sigil to open Breach Hold (the big walled crater in the north) and take two squads in.
-6. Rustmaw: Spread Out against its line charges (Warwright ramparts in its path make it crash and stagger), Charge its
-   vents when exposed, right-click the Scrap Menders in phase 2 and Focus Fire them, and in phase 3 Stack behind a
-   rampart for each fire wave, then Charge between waves.
+6. Around minute 18-24 your veteran Shieldbearer reaches Doctrine tier 3 and unlocks **Titan Form** (an alert and a
+   flex tell you). In hard fights it grows to titan size for 15 s. Watch it at Rustmaw: under Spread Out or Defensive
+   Formation it steps into the charge lane and stops the charge dead, and under Stack it plants itself in front of the
+   squad so kin in its shadow shrug off most of a fire wave. To try it straight away, select a kin-band and press F7.
+7. Rustmaw: Spread Out against its line charges (Warwright ramparts in its path make it crash and stagger, a braced
+   Titan stops it dead), Charge its vents when exposed, right-click the Scrap Menders in phase 2 and Focus Fire them,
+   and in phase 3 Stack behind a rampart or a Titan for each fire wave, then Charge between waves.
 
 ## What's in, mapped to the design doc
 
 | Design doc | In this MVP |
 | --- | --- |
 | Command, don't click | 10 of the 12 combat commands (all but Ambush and Lay Siege), each with its Warwright and Siegewright behaviour from the doc's table, plus move, gather, haul, garrison, recover and stop |
-| Squads and roles | Shieldbearer, Mender, Bruiser, Siegewright, Warwright, each with 3 abilities from the doc's kit table (the 3rd unlocks at Doctrine tier 2) |
+| Squads and roles | Shieldbearer, Mender, Bruiser, Siegewright, Warwright, each with 3 abilities from the doc's kit table (the 3rd unlocks at Doctrine tier 2); the Shieldbearer's 4th, Titan Form, unlocks at tier 3 |
+| Titan Form (tank war-form) | The tank grows 1.6x wider and 1.7x taller for 15 s (55 s cooldown): +35% health (fraction kept), +20 armour, 1.5x threat, 20% slower, hard to knock back or stun. A living wall: it slows enemies at its shield, catches shots aimed past it, blocks pounces onto the back line, stops Rustmaw's charge when braced (2 s stagger, 4 s with a rampart right behind it) and shelters up to 3 kin from each fire wave (-70%). Ends with the fight, on a march, when downed, or if wedged in a narrow gap |
 | Utility AI | Per-role scoring of every option each think (4x per second), shaped by the command, gated by Doctrine tier, tuned by Instinct. The inspector shows the live top 5 scores ("AI thinking") |
 | Doctrine | 5-tier mastery track per command per unit; XP from time under a command, kills, hard fights, wins, and using a command where it suits the enemy; tiers change behaviour (e.g. Defensive Formation tier 3 tanks intercept chargers on the healer, tier 4 rotates to cover flanks, Focus Fire tier 3 targets healers first, tier 4 switches off targets being healed) |
 | Instinct | Real learning: a few numbers per unit per (command, enemy family), tuned between fights by a bounded (1+1) evolution strategy; bounds widen with Doctrine tier; lock and reset buttons; plain-language notes in battle reports |
@@ -87,6 +92,12 @@ Siege; enemy cities; squad cohesion; Drill Grounds; co-op multiplayer.
 - **Smart AI is earned:** charge-blocking walls happen in defensive postures from tier 2; hiding behind walls from fire
   waves happens under Stack or Fortify, or for tier 4+ veterans in any command. The commander's calls matter early on.
 - **Fall Back** retreats all the way to base; any move order cancels it.
+- **Titan Form is a timed transform the AI casts, not a toggle.** It unlocks at Doctrine tier 3 in any command, so the
+  veteran squad's tank usually has it by the first raid and the second squad's does not. It ends when the fight does
+  or the squad marches, so a giant never paths across the map. It reads boss tells like the Warwright's charge walls:
+  braced postures from tier 3, any command from tier 4. Only a tank that braces stops a charge (one caught by surprise
+  is trampled), it steps aside for a rampart further down the lane, and a clash staggers for less than a rampart crash,
+  so the Warwright's answer stays the strongest. Shelter is partial and capped at 3 kin, so walls remain full cover.
 - **UI is IMGUI** (robust, code-only) and functional rather than pretty.
 
 ## Balance, measured headlessly
@@ -102,6 +113,18 @@ scripted fights. Current Rustmaw results over 10 runs (2 squads, ferrite gear):
 Against open-world camps a fresh squad wins most fights; Rockbacks punish Charge and Focus Fire at low tiers (about 30%
 wins) while Defensive Formation, Hold, Kite and Fortify win.
 
+Titan Form, measured with paired seeds (same worlds with the ability on and off; `titan` = flat arena, 100 seeds;
+`raid` = real generated Breach Holds, 200 worlds; ferrite gear):
+
+| Squad tiers | Passive commander, off / on | Commander reading the phases, off / on | Real Breach Holds, off / on | Charges stopped per raid |
+| --- | --- | --- | --- | --- |
+| 3 and 2 (a typical first raid: one Titan) | 42% / 52% | 80% / 77% | 60% / 60% | about 0.5 |
+| 3 and 3 (two Titans) | 61% / 59% | 78% / 91% | 65% / 81% | about 0.9 |
+
+With one Titan the raid is about as hard as before but bigger moments happen; two veteran Titans make it clearly
+easier, and the gap between a passive and an attentive commander grows rather than shrinks. All seven campaign seeds
+tried (1337, 7, 42, 99, 5, 3, 11) still end in victory, with Titan Form unlocking between 17:52 and 24:00.
+
 ## Project layout
 
 ```
@@ -110,6 +133,7 @@ Assets/Kinforge/Scripts/Game    Unity layer: bootstrap, camera, input, views, ef
 Assets/Kinforge/Editor          first-open scene setup + Kinforge menu
 Tests/Kinforge.Sim.Tests        xUnit tests for the sim (dotnet test)
 Tools/SimLab                    balance lab: dotnet run -- fights | boss 10 3 2 | smoke 1 20 | learn | campaign 1337
+                                titan 100 3 2 2 / raid 200 3 2 2 (Titan Form on vs off); KF_TITAN=0 switches it off
                                 (frames / bossframes dump per-tick positions for top-down debug renders)
 Tools/UnityCompileCheck         compiles Assets/ against UnityEngine reference assemblies without the editor
 Tools/EditorCompileCheck        same for the editor script
@@ -128,6 +152,8 @@ dotnet run --project Tools/SimLab -- boss 10 3 2
 - Does commanding feel like *command, don't click*? Are the 10 commands distinct enough, and are you making calls under pressure?
 - Can you see units getting better (Doctrine tiers, kin-mark glow, battle-report notes)? Is the learning legible?
 - Is Rustmaw readable (tells, phase hints) and fair? Too hard or too easy with two squads?
+- Titan Form: does the rise read from the RTS camera, and does stopping Rustmaw's charge feel epic? Is the giant big
+  enough (1.6x wide, 1.7x tall), too strong in phase 3, or unlocking too late?
 - Economy pacing: how long until the Sigil? Is garrisoning for the workshops interesting or a chore?
 - Camera, selection and HUD: what got in your way?
 - Which of the open questions in the doc do you want settled differently from my choices above?
