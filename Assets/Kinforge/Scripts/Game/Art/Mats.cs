@@ -13,6 +13,8 @@ namespace Kinforge.Game
         private static Material _litTemplate;
         private static Shader _sprite;
         private static readonly Dictionary<long, Material> Cache = new Dictionary<long, Material>();
+        // Textured materials are keyed by the texture object itself (no instance ids: newer Unity 6 releases reject GetInstanceID).
+        private static readonly Dictionary<(Texture, long), Material> TexturedCache = new Dictionary<(Texture, long), Material>();
 
         public static void Init()
         {
@@ -107,9 +109,16 @@ namespace Kinforge.Game
 
         public static Material Transparent(Color c, Texture tex = null)
         {
-            long key = Key(c, 4, tex == null ? 0f : (tex.GetInstanceID() & 0xff) / 255f) ^ (tex == null ? 0 : (long)tex.GetInstanceID() << 48);
+            long key = Key(c, 4, 0f);
+            if (tex != null)
+            {
+                if (TexturedCache.TryGetValue((tex, key), out var tm) && tm != null) return tm;
+                tm = NewTransparent(c, tex);
+                TexturedCache[(tex, key)] = tm;
+                return tm;
+            }
             if (Cache.TryGetValue(key, out var m) && m != null) return m;
-            m = NewTransparent(c, tex);
+            m = NewTransparent(c);
             Cache[key] = m;
             return m;
         }
