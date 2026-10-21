@@ -89,6 +89,16 @@ namespace Kinforge.Sim
         public bool Untargetable;
         public float HeightOffset;
 
+        // Titan Form (Shieldbearer slot 4). TitanT is the 0..1 grow ramp that every size and stat
+        // modifier scales with; only Titan.SetT writes it (and Radius while it is above zero).
+        public float TitanTime;
+        public float TitanT;
+        public bool TitanClashed;
+        public float TitanStuck;
+        public byte TitanEndReason;
+        /// <summary>Sim time until which a grown tank is braced to meet a charge (set by its AI while reading the tell).</summary>
+        public float TitanBraceUntil = -999f;
+
         // Action state
         public UnitAction Action;
         public float ActionTimer;
@@ -164,6 +174,7 @@ namespace Kinforge.Sim
             {
                 float hp = Def.MaxHp * (1f + Balance.ArmorTierHealth * (ArmorTier - 1));
                 if (Injured) hp *= Balance.InjuredMaxHpMul;
+                if (TitanT > 0f) hp *= 1f + (Balance.TitanHpMul - 1f) * TitanT;
                 return hp;
             }
         }
@@ -173,10 +184,17 @@ namespace Kinforge.Sim
             get
             {
                 float a = ArmorOverride >= 0f ? ArmorOverride : Def.Armor + Balance.ArmorTierArmor * (ArmorTier - 1);
+                if (TitanT > 0f) a += Balance.TitanArmor * TitanT;
                 a -= Status.ShredStacks * Balance.ShredPerStack;
                 return a < 0f ? 0f : a;
             }
         }
+
+        public bool TitanActive => TitanTime > 0f;
+        public float Mass => TitanT > 0f ? Def.Mass + (Balance.TitanMass - Def.Mass) * TitanT : Def.Mass;
+        public float ThreatMul => TitanT > 0f ? Def.ThreatMul * (1f + (Balance.TitanThreatMul - 1f) * TitanT) : Def.ThreatMul;
+        /// <summary>Visual height multiplier, for the view and HUD anchors.</summary>
+        public float HeightMul => 1f + (Balance.TitanHeightMul - 1f) * TitanT;
 
         public float CarryCapacity => Def.Carry;
         public float CarryLoad => Carry == null ? 0f : Carry.Total;

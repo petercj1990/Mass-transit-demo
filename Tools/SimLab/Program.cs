@@ -8,9 +8,14 @@ using Kinforge.Sim;
 //   dotnet run -- fights [runs]
 //   dotnet run -- boss [runs] [tier] [gear]
 //   dotnet run -- learn [fights]
+//   dotnet run -- titan [runs] [tierA] [tierB] [gear]   Titan Form on vs off in the Rustmaw raid
+//   dotnet run -- raid [worlds] [tierA] [tierB] [gear]   same, in real generated Breach Holds (terrain, walls, hatch)
 //   dotnet run -- trace
 static class Program
 {
+    /// <summary>KF_TITAN=0 turns Titan Form off in every world the lab builds (A/B runs).</summary>
+    public static readonly bool TitanOn = Environment.GetEnvironmentVariable("KF_TITAN") != "0";
+
     static int Main(string[] args)
     {
         string mode = args.Length > 0 ? args[0] : "fights";
@@ -28,6 +33,8 @@ static class Program
             case "campaign": Campaign.Run(Arg(1, 1337), Arg(2, 90), Arg(3, 0) != 0); break;
             case "frames": Frames(args.Length > 1 ? args[1] : "frames.txt", Arg(2, 1), Arg(3, 0), Arg(4, 0), Arg(5, 60)); break;
             case "bossframes": BossFrames(args.Length > 1 ? args[1] : "boss.txt", Arg(2, 500), Arg(3, 3)); break;
+            case "titan": TitanAb(Arg(1, 40), Arg(2, 3), Arg(3, 2), Arg(4, 2)); break;
+            case "raid": RealRaids(Arg(1, 40), Arg(2, 3), Arg(3, 2), Arg(4, 2)); break;
             case "trace": Trace(Arg(1, 1), Arg(2, 1), Arg(3, 0), Arg(4, 0)); break;
             default: Console.WriteLine("unknown mode"); return 1;
         }
@@ -39,6 +46,7 @@ static class Program
     static void Smoke(int seed, int minutes)
     {
         var w = World.Create(seed);
+        w.TitanEnabled = Program.TitanOn;
         Console.WriteLine($"Seed {seed}: {w.Units.Count} units, {w.Structures.Count} structures, {w.Nodes.Count} nodes, {w.Props.Count} props, {w.Groups.Count} groups");
         foreach (var g in w.Groups) Console.WriteLine($"  {g.Name} tier {g.Tier} at {g.Home} ({g.Members.Count}) dist {Vec2.Distance(g.Home, w.BasePos):0}");
         var sq = w.Squads[0];
@@ -113,6 +121,7 @@ static class Program
     static Result RunFight(int seed, CommandType stance, int tier, UnitKind[] enemies, int gear = 1, bool verbose = false)
     {
         var w = Scenarios.Blank(seed);
+        w.TitanEnabled = Program.TitanOn;
         var sq = Scenarios.AddSquad(w, new Vec2(40f, 40f), tier, stance, gear);
         Scenarios.AddPack(w, new Vec2(40f, 62f), enemies);
         // Walk the squad into the camp.
@@ -200,6 +209,7 @@ static class Program
     static void Learn(int fights)
     {
         var w = Scenarios.Blank(7);
+        w.TitanEnabled = Program.TitanOn;
         var sq = Scenarios.AddSquad(w, new Vec2(40f, 40f), 0, CommandType.DefensiveFormation);
         for (int f = 0; f < fights; f++)
         {
@@ -231,6 +241,7 @@ static class Program
     static void BossTrace(int seed, int tier, int gear, bool smart)
     {
         var w = Scenarios.BossArena(seed);
+        w.TitanEnabled = Program.TitanOn;
         var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -30f), tier, CommandType.DefensiveFormation, gear);
         var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -30f), tier, CommandType.DefensiveFormation, gear);
         w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
@@ -295,6 +306,7 @@ static class Program
     static void Frames(string path, int seed, int stance, int setup, int seconds)
     {
         var w = Scenarios.Blank(seed);
+        w.TitanEnabled = Program.TitanOn;
         var sq = Scenarios.AddSquad(w, new Vec2(40f, 40f), 2, (CommandType)stance);
         Scenarios.AddPack(w, new Vec2(40f, 62f), Setups[setup].kinds);
         w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = new Vec2(40f, 54f), Squads = { sq.Id } });
@@ -311,6 +323,7 @@ static class Program
     static void BossFrames(string path, int seed, int tier)
     {
         var w = Scenarios.BossArena(seed);
+        w.TitanEnabled = Program.TitanOn;
         var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -26f), tier, CommandType.DefensiveFormation, 2);
         var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -26f), tier, CommandType.DefensiveFormation, 2);
         w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
@@ -329,6 +342,11 @@ static class Program
             }
             w.Step();
             if (t % 10 == 0) DumpFrame(o, w);
+            foreach (var ev in w.Events)
+            {
+                if (ev.Type == SimEventType.TitanRise || ev.Type == SimEventType.TitanClash || ev.Type == SimEventType.TitanShelter || ev.Type == SimEventType.BossCrash)
+                    Console.WriteLine($"  t={w.Time:0.0} frame {t / 10} {ev.Type} {(ev.Type == SimEventType.TitanClash && ev.Value > 0.5f ? "(anvil)" : "")}");
+            }
         }
         Console.WriteLine(w.Victory ? "victory" : "no victory");
     }
@@ -337,6 +355,7 @@ static class Program
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var w = World.Create(1337);
+        w.TitanEnabled = Program.TitanOn;
         Console.WriteLine($"World.Create: {sw.ElapsedMilliseconds} ms");
         sw.Restart();
         int n = w.Height.Verts;
@@ -366,6 +385,7 @@ static class Program
     static void GatherTest()
     {
         var w = Scenarios.Blank(3);
+        w.TitanEnabled = Program.TitanOn;
         var sq = Scenarios.AddSquad(w, w.BasePos + new Vec2(0f, 6f), 0, CommandType.DefensiveFormation);
         var node = new ResourceNode { Id = w.NextId(), Kind = ResourceKind.Ferrite, Pos = new Vec2(12f, 50f), Radius = 1.1f, Amount = 300f, MaxAmount = 300f, Label = "Test ferrite" };
         node.Cells = w.Nav.RasterCircle(node.Pos, 0.8f);
@@ -384,6 +404,7 @@ static class Program
     static void P3(int seed, int tier)
     {
         var w = Scenarios.BossArena(seed);
+        w.TitanEnabled = Program.TitanOn;
         var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -12f), tier, CommandType.DefensiveFormation, 2);
         var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -12f), tier, CommandType.DefensiveFormation, 2);
         for (int t = 0; t < 60; t++) w.Step();
@@ -422,6 +443,7 @@ static class Program
             for (int i = 0; i < runs; i++)
             {
                 var w = Scenarios.BossArena(500 + i);
+                w.TitanEnabled = Program.TitanOn;
                 var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -30f), tier, CommandType.DefensiveFormation, gear);
                 var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -30f), tier, CommandType.DefensiveFormation, gear);
                 var ids = new[] { a.Id, b.Id };
@@ -469,6 +491,182 @@ static class Program
                 Console.WriteLine($"  run {i}: {(w.Victory ? "WIN " : "lose")} phase {w.Boss.Phase} boss hp {w.Boss.Body.HpFraction:P0} t={t / 20.0:0}s deaths {a.Members.Count(m => m.Life == LifeState.Dead) + b.Members.Count(m => m.Life == LifeState.Dead)}");
             }
             Console.WriteLine($"{(smart ? "Smart commander" : "Passive (Defensive Formation only)")}, tier {tier}, gear {gear}: {agg}   ended in phase: {string.Join(" ", phases.Select((n, p) => $"P{p}={n}"))}");
+        }
+    }
+
+    sealed class TitanStats
+    {
+        public int Runs, Wins, Deaths, Grows, Clashes, Anvils, Sheltered, Cramped, NoRoom, Crashes, Violations;
+        public double Time;
+        public string FirstViolation;
+    }
+
+    /// <summary>One Rustmaw raid: squad A at tierA, squad B at tierB, passive or scripted-smart commander.</summary>
+    static TitanStats BossRun(int seed, int tierA, int tierB, int gear, bool smart, bool titan)
+    {
+        var st = new TitanStats { Runs = 1 };
+        var w = Scenarios.BossArena(seed);
+        w.TitanEnabled = titan;
+        var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -30f), tierA, CommandType.DefensiveFormation, gear);
+        var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -30f), tierB, CommandType.DefensiveFormation, gear);
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
+        int t = 0;
+        CommandType last = CommandType.DefensiveFormation;
+        for (; t < 20 * 600 && !w.Victory; t++)
+        {
+            if (smart && t % 10 == 0)
+            {
+                var boss = w.Boss;
+                CommandType want = CommandType.DefensiveFormation;
+                if (boss.Phase == 1) want = boss.VentsExposed || boss.Staggered ? CommandType.Charge : CommandType.SpreadOut;
+                else if (boss.Phase == 2) want = boss.MendersAlive > 0 ? CommandType.FocusFire : CommandType.DefensiveFormation;
+                else if (boss.Phase == 3) want = boss.BlastPending || boss.NextBlastIn < 2.5f ? CommandType.Stack : CommandType.Charge;
+                if (want != last)
+                {
+                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want, Squads = { a.Id, b.Id } });
+                    last = want;
+                }
+                if (boss.Phase == 2 && t % 40 == 0)
+                {
+                    var mender = boss.Group.Members.FirstOrDefault(m => m.Kind == UnitKind.ScrapMender && m.IsActive);
+                    if (mender != null && a.FocusTargetId != mender.Id)
+                        w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id, Squads = { a.Id, b.Id } });
+                }
+            }
+            w.Step();
+            foreach (var ev in w.Events)
+            {
+                switch (ev.Type)
+                {
+                    case SimEventType.TitanRise: st.Grows++; break;
+                    case SimEventType.TitanClash: if (ev.Value > 0.5f) st.Anvils++; else st.Clashes++; break;
+                    case SimEventType.TitanShelter: st.Sheltered++; break;
+                    case SimEventType.TitanFade:
+                        if (ev.Value == Titan.FadeCramped) st.Cramped++;
+                        else if (ev.Value == Titan.FadeNoRoom) st.NoRoom++;
+                        break;
+                    case SimEventType.BossCrash: st.Crashes++; break;
+                }
+            }
+            string bad = Titan.CheckInvariants(w);
+            if (bad != null)
+            {
+                st.Violations++;
+                st.FirstViolation ??= $"seed {seed} t={w.Time:0.0}: {bad}";
+            }
+            if (a.Wiped && b.Wiped) break;
+        }
+        if (w.Victory) st.Wins++;
+        st.Time = t / 20.0;
+        st.Deaths = a.Members.Concat(b.Members).Count(m => m.Life == LifeState.Dead);
+        return st;
+    }
+
+    /// <summary>Runs the smart raid commander in a real generated world's Breach Hold.</summary>
+    static TitanStats RealRaid(int seed, int tierA, int tierB, int gear, bool titan)
+    {
+        var st = new TitanStats { Runs = 1 };
+        var w = World.Create(seed);
+        w.TitanEnabled = titan;
+        w.Boss.OpenGate(w);
+        Vec2 outward = (w.BasePos - w.ArenaCenter).Normalized;
+        Vec2 outside = w.ArenaCenter + outward * (w.ArenaRadius + 8f);
+        var a = Scenarios.AddSquad(w, w.Nav.NearestWalkable(outside + outward.Right * 4f, 6), tierA, CommandType.DefensiveFormation, gear);
+        var b = Scenarios.AddSquad(w, w.Nav.NearestWalkable(outside - outward.Right * 4f, 6), tierB, CommandType.DefensiveFormation, gear);
+        var ids = new[] { a.Id, b.Id };
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + outward * 10f, Squads = { a.Id, b.Id } });
+        int t = 0;
+        bool started = false;
+        CommandType last = CommandType.DefensiveFormation;
+        for (; t < 20 * 400 && !w.Victory; t++)
+        {
+            var boss = w.Boss;
+            if (boss.Active && t % 10 == 0)
+            {
+                CommandType want = CommandType.DefensiveFormation;
+                if (boss.Phase == 1) want = boss.VentsExposed || boss.Staggered ? CommandType.Charge : CommandType.SpreadOut;
+                else if (boss.Phase == 2) want = boss.MendersAlive > 0 ? CommandType.FocusFire : CommandType.DefensiveFormation;
+                else if (boss.Phase == 3) want = boss.BlastPending || boss.NextBlastIn < 2.5f ? CommandType.Stack : CommandType.Charge;
+                if (want != last)
+                {
+                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want, Squads = { a.Id, b.Id } });
+                    last = want;
+                }
+                if (boss.Phase == 2 && t % 40 == 0)
+                {
+                    var mender = boss.Group.Members.FirstOrDefault(m => m.Kind == UnitKind.ScrapMender && m.IsActive);
+                    if (mender != null) w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id, Squads = { a.Id, b.Id } });
+                }
+            }
+            w.Step();
+            foreach (var ev in w.Events)
+            {
+                switch (ev.Type)
+                {
+                    case SimEventType.TitanRise: st.Grows++; break;
+                    case SimEventType.TitanClash: if (ev.Value > 0.5f) st.Anvils++; else st.Clashes++; break;
+                    case SimEventType.TitanShelter: st.Sheltered++; break;
+                    case SimEventType.TitanFade:
+                        if (ev.Value == Titan.FadeCramped) st.Cramped++;
+                        else if (ev.Value == Titan.FadeNoRoom) st.NoRoom++;
+                        break;
+                    case SimEventType.BossCrash: st.Crashes++; break;
+                }
+            }
+            if (t % 20 == 0 && Titan.CheckInvariants(w) is string bad)
+            {
+                st.Violations++;
+                st.FirstViolation ??= $"seed {seed} t={w.Time:0.0}: {bad}";
+            }
+            // As in the campaign, the attempt has failed once Rustmaw resets (nobody left in the arena).
+            if (boss.Active) started = true;
+            else if (started && boss.Phase == 0) break;
+            if (a.Wiped && b.Wiped) break;
+        }
+        if (w.Victory) st.Wins++;
+        st.Time = t / 20.0;
+        st.Deaths = a.Members.Concat(b.Members).Count(m => m.Life == LifeState.Dead);
+        return st;
+    }
+
+    static void RealRaids(int worlds, int tierA, int tierB, int gear)
+    {
+        Console.WriteLine($"Real-world raids: {worlds} generated worlds, smart commander, squad tiers {tierA}/{tierB}, gear {gear}");
+        foreach (bool titan in new[] { false, true })
+        {
+            var results = new TitanStats[worlds];
+            System.Threading.Tasks.Parallel.For(0, worlds, i => results[i] = RealRaid(1000 + i, tierA, tierB, gear, titan));
+            PrintTitan($"smart   titan {(titan ? "ON " : "off")}", results);
+        }
+    }
+
+    static void PrintTitan(string label, TitanStats[] results)
+    {
+        var s = new TitanStats();
+        foreach (var r in results)
+        {
+            s.Runs += r.Runs; s.Wins += r.Wins; s.Deaths += r.Deaths; s.Grows += r.Grows; s.Clashes += r.Clashes; s.Anvils += r.Anvils;
+            s.Sheltered += r.Sheltered; s.Cramped += r.Cramped; s.NoRoom += r.NoRoom; s.Crashes += r.Crashes; s.Violations += r.Violations;
+            s.Time += r.Time;
+            s.FirstViolation ??= r.FirstViolation;
+        }
+        double n = s.Runs;
+        Console.WriteLine($"  {label}: win {100.0 * s.Wins / n,3:0}%  deaths {s.Deaths / n,4:0.0}  time {s.Time / n,4:0}s  " +
+                          $"grows {s.Grows / n,4:0.0}  clashes {s.Clashes / n,4:0.00}  anvils {s.Anvils / n,4:0.00}  crashes {s.Crashes / n,4:0.00}  " +
+                          $"sheltered {s.Sheltered / n,4:0.0}  cramped {s.Cramped}  no-room {s.NoRoom}  invariant violations {s.Violations}");
+        if (s.FirstViolation != null) Console.WriteLine("    first violation: " + s.FirstViolation);
+    }
+
+    /// <summary>Paired seeds, Titan Form on vs off, passive and smart commanders: the feature's balance guardrails.</summary>
+    static void TitanAb(int runs, int tierA, int tierB, int gear)
+    {
+        Console.WriteLine($"Titan Form A/B: {runs} paired seeds, squad tiers {tierA}/{tierB}, gear {gear}");
+        foreach (bool smart in new[] { false, true })
+        foreach (bool titan in new[] { false, true })
+        {
+            var results = new TitanStats[runs];
+            System.Threading.Tasks.Parallel.For(0, runs, i => results[i] = BossRun(500 + i, tierA, tierB, gear, smart, titan));
+            PrintTitan($"{(smart ? "smart  " : "passive")} titan {(titan ? "ON " : "off")}", results);
         }
     }
 }

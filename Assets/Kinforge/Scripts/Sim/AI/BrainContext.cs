@@ -371,6 +371,26 @@ namespace Kinforge.Sim
                     behind = W.Nav.NearestWalkable(behind, 3);
                     if (!W.Nav.SightClear(t.Pos, behind)) return behind;
                 }
+                // No wall to hide behind: a grown Titan's shadow is the next best thing.
+                Unit giant = null;
+                float giantD = 12f;
+                foreach (var g in W.Units)
+                {
+                    if (g == U || !g.IsPlayer || !g.IsTargetable || g.TitanT <= 0f) continue;
+                    float d = Vec2.Distance(g.Pos, U.Pos);
+                    if (d < giantD)
+                    {
+                        giantD = d;
+                        giant = g;
+                    }
+                }
+                if (giant != null)
+                {
+                    Vec2 away = (giant.Pos - t.Pos).Normalized;
+                    if (away == Vec2.Zero) away = -Fwd;
+                    Vec2 behind = W.Nav.NearestWalkable(giant.Pos + away * (giant.Radius + U.Radius + 0.4f), 3);
+                    if (Titan.InShadow(giant, t.Pos, behind)) return behind;
+                }
             }
 
             Vec2 pref = (Center - U.Pos);

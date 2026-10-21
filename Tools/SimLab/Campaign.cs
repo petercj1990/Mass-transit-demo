@@ -21,6 +21,7 @@ static class Campaign
     public static void Run(int seed, int maxMinutes, bool verbose)
     {
         var w = World.Create(seed);
+        w.TitanEnabled = Program.TitanOn;
         var log = new List<string>();
         void Log(string s)
         {
@@ -53,9 +54,21 @@ static class Campaign
         bool raiding = false;
         int alertIdx = 0;
         int maxTicks = maxMinutes * 60 * 20;
+        int titanRises = 0, titanClashes = 0, titanShelters = 0, titanViolations = 0;
         for (int t = 0; t < maxTicks && !w.Victory; t++)
         {
             w.Step();
+            foreach (var ev in w.Events)
+            {
+                if (ev.Type == SimEventType.AbilityUnlocked && ev.Ability == AbilityId.TitanForm) Log($"MILESTONE Titan Form unlocked ({w.FindUnitAny(ev.A)?.Name})");
+                else if (ev.Type == SimEventType.TitanRise) titanRises++;
+                else if (ev.Type == SimEventType.TitanClash) titanClashes++;
+                else if (ev.Type == SimEventType.TitanShelter) titanShelters++;
+            }
+            if (t % 20 == 0 && Titan.CheckInvariants(w) is string bad)
+            {
+                if (titanViolations++ == 0) Log("TITAN INVARIANT " + bad);
+            }
             if (verbose)
             {
                 while (alertIdx < w.Alerts.Count)
@@ -129,6 +142,9 @@ static class Campaign
             need[(int)ResourceKind.Ferrite] += alloyShort * 2f;
             var shortfall = new float[6];
             for (int i = 0; i < 6; i++) shortfall[i] = Math.Max(0f, need[i] - w.Stock.Amounts[i]);
+
+            // Not ready while dead kin wait at the Cradle for materials we lack: go and gather them first.
+            if (shortfall.Sum() >= 1f) ready = false;
 
             bool canSmelt = alloyShort > 0f && w.Stock[ResourceKind.Ferrite] >= 2f;
             bool benchWaiting = w.Base.Bench != BenchJob.None;
@@ -264,9 +280,10 @@ static class Campaign
 
         Console.WriteLine($"Seed {seed}: {(w.Victory ? "VICTORY" : "no victory")} at {(int)w.Time / 60}:{(int)w.Time % 60:00}. Stock: " +
                           string.Join(", ", Enumerable.Range(0, 6).Select(i => $"{(ResourceKind)i}={w.Stock.Amounts[i]:0}")));
-        foreach (var l in log.Where(l => l.Contains("MILESTONE") || l.Contains("RAID") || l.Contains("raid failed") || l.Contains("buy"))) Console.WriteLine("  " + l);
+        foreach (var l in log.Where(l => l.Contains("MILESTONE") || l.Contains("TITAN") || l.Contains("RAID") || l.Contains("raid failed") || l.Contains("buy"))) Console.WriteLine("  " + l);
         int deaths = w.Squads.Sum(s => s.Members.Count(m => m.Life == LifeState.Dead));
         Console.WriteLine($"  fights {w.Reports.Count}, wipes {w.Reports.Count(r => r.Result == "Squad wiped")}, dead now {deaths}");
+        Console.WriteLine($"  Titan Form: {titanRises} rises, {titanClashes} charge clashes, {titanShelters} sheltered hits, {titanViolations} invariant violations");
         foreach (var s in w.Squads)
             Console.WriteLine($"  {s.Name}: DF tier {string.Join("", s.Members.Select(m => m.Doctrine.Tier(CommandType.DefensiveFormation)))}, max tiers {string.Join("", s.Members.Select(m => m.Doctrine.MaxTier))}");
     }

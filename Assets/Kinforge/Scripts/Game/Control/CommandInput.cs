@@ -145,7 +145,7 @@ namespace Kinforge.Game
             {
                 var v = _game.View.UnitViewFor(u.Id);
                 if (v == null || !v.Visible || u.Life == LifeState.Dead) continue;
-                var center = v.Position + Vector3.up * (u.Def.Height * 0.5f);
+                var center = v.Position + Vector3.up * (v.VisualHeight * 0.5f);
                 if (!rig.ToScreen(center, out var sp)) continue;
                 rig.ToScreen(center + rig.Cam.transform.right * (u.Radius + 0.35f), out var edge);
                 float radius = Mathf.Max(14f, (edge - sp).magnitude * 1.2f);
@@ -384,6 +384,15 @@ namespace Kinforge.Game
             if (Keys.Down(KeyCode.Escape)) hud.Escape();
 
             // Playtest helpers
+            if (Keys.Down(KeyCode.F7))
+            {
+                // Playtest drill: selected squads jump to Doctrine tier 3 (opens the Shieldbearer's Titan Form).
+                foreach (int id in _game.Selection.Squads)
+                {
+                    var sq = W.FindSquad(id);
+                    if (sq != null) PlayerUnits.DebugDrill(W, sq, Balance.FourthAbilityTier);
+                }
+            }
             if (Keys.Down(KeyCode.F8)) _game.Rig.EdgeScroll = !_game.Rig.EdgeScroll;
             if (Keys.Down(KeyCode.F9)) _game.CycleSpeed();
             if (Keys.Down(KeyCode.F10) && W.Boss != null && W.Boss.Active) W.Boss.DebugSkipToPhase(W, W.Boss.Phase + 1);

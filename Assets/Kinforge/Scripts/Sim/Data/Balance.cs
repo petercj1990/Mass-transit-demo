@@ -58,6 +58,37 @@ namespace Kinforge.Sim
         public const float LoadSpeedPenalty = 0.35f;  // fully loaded squads move this much slower
         public const float LoadAttackPenalty = 0.3f;  // and attack this much slower ("fights badly")
 
+        // --- Titan Form (Shieldbearer slot 4) ---------------------------------------------------
+        // Every modifier scales with the 0..1 grow ramp, so a unit that never grows is unchanged.
+        public const float TitanScale = 1.6f;          // body radius multiplier (0.75 m -> 1.2 m)
+        public const float TitanHeightMul = 1.7f;      // visual height (2.3 m -> 3.9 m, taller than Rustmaw)
+        public const float TitanRampSeconds = 0.5f;
+        public const float TitanHpMul = 1.35f;         // max health; the health fraction is kept when growing or shrinking
+        public const float TitanArmor = 20f;
+        public const float TitanMass = 9f;             // body-block and knockback weight (normally 3.5)
+        public const float TitanThreatMul = 1.5f;
+        public const float TitanSpeedMul = 0.8f;
+        public const float TitanAttackMul = 1.3f;      // basic attacks only
+        public const float TitanStunMul = 0.5f;
+        public const float TitanTauntBonus = 2f;       // Taunt Roar reach while grown
+        public const float TitanChallengeSeconds = 2f; // growing taunts nearby enemies this long
+        public const float TitanShieldReach = 0.5f;    // enemy shots passing this close to a Titan hit it instead
+        public const float TitanLoomReach = 1.5f;      // ground enemies this close to a Titan move slower
+        public const float TitanLoomSlow = 0.3f;
+        public const float TitanShelterMul = 0.3f;     // fire-wave damage to kin in a Titan's shadow
+        public const float TitanShelterDepth = 3f;
+        public const float TitanShelterPad = 0.3f;
+        public const int TitanShelterCap = 3;          // kin each Titan can shelter per blast
+        public const float TitanClashStagger = 2f;     // a rampart crash staggers Rustmaw 4 s
+        public const float TitanClashVents = 2.5f;
+        public const float TitanClashImmunity = 20f;   // Rustmaw can be clashed at most once per 20 s
+        public const float TitanOutOfCombat = 2f;      // the form ends this soon after a fight
+        public const float TitanMarching = 0.5f;       // or when the squad marches off
+        public const float TitanStuckSeconds = 2f;     // wedged against a wall this long: shrink so the tank can get through
+        public const float TitanRoom = 1.4f;           // clear ground needed around the tank to grow
+        public const float TitanFizzleCooldown = 3f;
+        public const float TitanCastCooldown = 1f;     // cooldown while casting; the full cooldown starts when it grows
+
         // --- Engineers ---------------------------------------------------------------------------
         public const int MaxTurretsPerSquad = 2;
         public const int MaxMortarsPerSquad = 1;
@@ -68,6 +99,7 @@ namespace Kinforge.Sim
         // Cumulative XP needed for tiers 1..5. Recruits start at tier 0 ("no Doctrine").
         public static readonly float[] DoctrineTierXp = { 0f, 15f, 60f, 150f, 320f, 600f };
         public const int ThirdAbilityTier = 2;        // ability slot 3 opens at Doctrine tier 2 in any command
+        public const int FourthAbilityTier = 3;       // slot 4 (only the Shieldbearer has one: Titan Form) at tier 3
         public const float DoctrineXpPerSecond = 1f;
         public const float DoctrineKillXp = 3f;
         public const float DoctrineWinMul = 1.25f;

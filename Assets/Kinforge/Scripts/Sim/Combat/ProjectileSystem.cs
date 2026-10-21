@@ -156,7 +156,7 @@ namespace Kinforge.Sim
                 foreach (var u in w.Units)
                 {
                     if (u.Faction != hostile || !u.IsTargetable) continue;
-                    float t = SegmentCircle(a, b, u.Pos, u.Radius + ShotRadius);
+                    float t = SegmentCircle(a, b, u.Pos, u.Radius + ShotRadius + Balance.TitanShieldReach * u.TitanT);
                     if (t >= 0f && t < bestT)
                     {
                         bestT = t;

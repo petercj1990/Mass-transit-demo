@@ -275,6 +275,7 @@ namespace Kinforge.Sim
 
             float dmg = ad.Damage;
             if (u.Kind == UnitKind.Rustmaw && w.Boss != null) dmg *= w.Boss.DamageDealtMultiplier;
+            if (u.TitanT > 0f) dmg *= 1f + (Balance.TitanAttackMul - 1f) * u.TitanT;
 
             if (ad.IsMelee)
             {
@@ -319,7 +320,7 @@ namespace Kinforge.Sim
             u.ActionDir = dir.LengthSq > 0.0001f ? dir.Normalized : Vec2.FromAngle(u.Facing);
             u.ActionAccum = 0f;
             u.ActionShots = 0;
-            slot.Cooldown = def.Cooldown;
+            slot.Cooldown = id == AbilityId.TitanForm ? Balance.TitanCastCooldown : def.Cooldown;
             u.LastCastTime = w.Time;
             if (id == AbilityId.TailSlam || id == AbilityId.RustmawSwipe)
             {

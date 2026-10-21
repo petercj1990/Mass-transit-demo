@@ -17,6 +17,9 @@ namespace Kinforge.Sim
         public int Kills;
         public int Stabilizes;
         public int Interrupts;
+        public int TitanGrows;
+        public int TitanClashes;
+        public int TitanSheltered;
         public bool Died;
         public readonly float[] CommandTime = new float[CommandInfo.Count];
 
@@ -247,12 +250,19 @@ namespace Kinforge.Sim
 
                 if (xpSum > 0f) report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = $"+{xpSum:0} Doctrine XP", Kind = 0 });
                 foreach (var t in tierUps) report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = "reached " + t, Kind = 1 });
-                if (PlayerUnits.RefreshAbilitySlots(m))
+                for (var slot = PlayerUnits.RefreshAbilitySlots(m); slot != null; slot = PlayerUnits.RefreshAbilitySlots(m))
                 {
-                    var s3 = m.Abilities[2].Def;
-                    report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = $"unlocked {s3.Name}", Kind = 1 });
-                    w.Alert($"{m.Name} unlocked {s3.Name}!", m.Pos, 3);
+                    var d = slot.Def;
+                    report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = $"unlocked {d.Name}", Kind = 1 });
+                    w.Emit(SimEventType.AbilityUnlocked, m.Id, 0, m.Pos, 0f, DamageType.Kinetic, d.Id);
+                    if (d.Id == AbilityId.TitanForm)
+                        w.Alert($"{m.Name}'s kin-core remembers the war-form! Titan Form unlocked: in hard fights {m.Name} grows into a living wall.", m.Pos, 3);
+                    else
+                        w.Alert($"{m.Name} unlocked {d.Name}!", m.Pos, 3);
                 }
+                if (f.TitanGrows > 0) report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = "rose as a Titan" + Times(f.TitanGrows), Kind = 0 });
+                if (f.TitanClashes > 0) report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = "stopped Rustmaw's charge dead" + Times(f.TitanClashes), Kind = 0 });
+                if (f.TitanSheltered > 0) report.Lines.Add(new ReportLine { UnitId = m.Id, Who = m.Name, Text = $"sheltered kin from {f.TitanSheltered} fire-wave hit{(f.TitanSheltered == 1 ? "" : "s")}", Kind = 0 });
 
                 if (m.Life != LifeState.Dead && m.Instinct != null)
                 {
@@ -273,6 +283,8 @@ namespace Kinforge.Sim
             }
             return report;
         }
+
+        private static string Times(int n) => n > 1 ? $" x{n}" : "";
 
         private static string EnemySummary(Dictionary<UnitKind, int> names)
         {

@@ -141,14 +141,48 @@ namespace Kinforge.Sim
 
         public bool SightClear(Vec2 a, Vec2 b) => FirstBlockedCell(a, b, true) == -1;
 
-        /// <summary>True if a body of the given radius can travel straight from a to b.</summary>
-        public bool LineWalkable(Vec2 a, Vec2 b, float radius)
+        /// <summary>
+        /// True if a body of the given radius can travel straight from a to b. Wide checks the full
+        /// radius plus a middle pair of lines, for bodies bigger than a grid cell (a grown Titan).
+        /// </summary>
+        public bool LineWalkable(Vec2 a, Vec2 b, float radius, bool wide = false)
         {
             if (FirstBlockedCell(a, b, false) != -1) return false;
             Vec2 d = (b - a).Normalized;
             if (d == Vec2.Zero) return true;
-            Vec2 off = d.Right * (radius * 0.8f);
-            return FirstBlockedCell(a + off, b + off, false) == -1 && FirstBlockedCell(a - off, b - off, false) == -1;
+            Vec2 off = d.Right * (radius * (wide ? 1f : 0.8f));
+            if (FirstBlockedCell(a + off, b + off, false) != -1 || FirstBlockedCell(a - off, b - off, false) != -1) return false;
+            if (!wide) return true;
+            Vec2 mid = d.Right * (radius * 0.5f);
+            return FirstBlockedCell(a + mid, b + mid, false) == -1 && FirstBlockedCell(a - mid, b - mid, false) == -1;
+        }
+
+        private bool _clearance;
+
+        private bool NearBlocked(int x, int z)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (BlocksMove(x + dx, z + dz)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Path for a big body: keeps a cell clear of walls where it can, else a normal path.</summary>
+        public bool FindPathWide(Vec2 start, Vec2 goal, List<Vec2> path, float radius)
+        {
+            _clearance = true;
+            bool ok;
+            try
+            {
+                ok = FindPath(start, goal, path, radius);
+            }
+            finally
+            {
+                _clearance = false;
+            }
+            return ok || FindPath(start, goal, path, radius);
         }
 
         public Vec2 NearestWalkable(Vec2 p, int maxRadius = 8)
@@ -239,6 +273,7 @@ namespace Kinforge.Sim
                     if (BlocksMove(nx, nz)) continue;
                     if (dx != 0 && dz != 0 && (BlocksMove(cx + dx, cz) || BlocksMove(cx, cz + dz))) continue;
                     int ni = Index(nx, nz);
+                    if (_clearance && ni != goalIdx && NearBlocked(nx, nz)) continue;
                     float step = (dx != 0 && dz != 0) ? 1.41421f : 1f;
                     float ng = _g[cur] + step;
                     if (_stamp[ni] != _searchId)
@@ -268,7 +303,7 @@ namespace Kinforge.Sim
             {
                 int far = i;
                 int last = _cellScratch.Count - 1;
-                if (last > i && LineWalkable(anchor, CellCenter(_cellScratch[last]), radius))
+                if (last > i && LineWalkable(anchor, CellCenter(_cellScratch[last]), radius, _clearance))
                 {
                     far = last;
                 }
@@ -277,7 +312,7 @@ namespace Kinforge.Sim
                     // Bounded look-ahead keeps smoothing linear on long winding routes.
                     for (int j = Math.Min(last - 1, i + 40); j > i; j--)
                     {
-                        if (LineWalkable(anchor, CellCenter(_cellScratch[j]), radius))
+                        if (LineWalkable(anchor, CellCenter(_cellScratch[j]), radius, _clearance))
                         {
                             far = j;
                             break;

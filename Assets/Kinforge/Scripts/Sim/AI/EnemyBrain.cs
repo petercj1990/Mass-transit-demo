@@ -321,7 +321,8 @@ namespace Kinforge.Sim
                     {
                         var soft = w.NearestUnit(e.Pos, Faction.Player, 14f,
                             u => u.Role == Role.Healer || u.Role == Role.Siege || u.Role == Role.Warwright);
-                        if (soft != null && (target is Unit tu && tu.Role == Role.Tank)) target = soft;
+                        // A hound already worrying a grown Titan stays on it.
+                        if (soft != null && (target is Unit tu && tu.Role == Role.Tank && tu.TitanT <= 0f)) target = soft;
                     }
                     break;
                 }
@@ -359,6 +360,7 @@ namespace Kinforge.Sim
                 float d = Vec2.Distance(u.Pos, e.Pos);
                 if (d < 4f || d > 10f) continue;
                 if (!w.Nav.LineWalkable(e.Pos, u.Pos, e.Radius)) continue;
+                if (Titan.ShieldOnLine(w, e.Pos, u.Pos, u, e.Radius) != null) continue; // no leaping past a Titan
                 float s = 10f - d;
                 if (u.Role == Role.Healer) s += 8f;
                 else if (u.Role == Role.Siege) s += 6f;

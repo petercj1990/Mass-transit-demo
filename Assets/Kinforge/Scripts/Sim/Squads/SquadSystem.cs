@@ -224,6 +224,10 @@ namespace Kinforge.Sim
             return false;
         }
 
+        /// <summary>Marching rather than fighting: the squad's units walk in formation instead of picking fights.</summary>
+        public static bool IsMarching(World w, Squad sq) =>
+            IsTraveling(w, sq) && (sq.Task == SquadTask.FallBack || !sq.InCombat || sq.Forced);
+
         public static Vec2 TravelGoal(World w, Squad sq)
         {
             switch (sq.Task)
@@ -404,6 +408,7 @@ namespace Kinforge.Sim
             foreach (var m in sq.Members)
             {
                 if (m.Life != LifeState.Active) continue;
+                Titan.EndInstant(w, m, Titan.FadeLeftFight);
                 m.Garrisoned = true;
                 m.Action = UnitAction.None;
                 m.Intent = default;

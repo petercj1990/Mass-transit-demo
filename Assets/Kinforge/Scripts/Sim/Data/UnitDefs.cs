@@ -76,7 +76,7 @@ namespace Kinforge.Sim
                 Kind = UnitKind.Shieldbearer, Name = "Shieldbearer", Role = Role.Tank,
                 MaxHp = 430f, Armor = 40f, Speed = 4.2f, Radius = 0.75f, Mass = 3.5f, ThreatMul = 3f, Carry = 30f, Height = 2.3f,
                 Attack = new AttackDef { Name = "Shield Mace", Range = 1.6f, Damage = 14f, Type = DamageType.Kinetic, Cooldown = 1.4f, Windup = 0.35f },
-                Kit = new[] { AbilityId.TauntRoar, AbilityId.ShieldBash, AbilityId.ShockwaveSlam },
+                Kit = new[] { AbilityId.TauntRoar, AbilityId.ShieldBash, AbilityId.ShockwaveSlam, AbilityId.TitanForm },
                 Blurb = "Holds enemy attention, body-blocks and protects the Mender.",
             });
             Add(new UnitDef

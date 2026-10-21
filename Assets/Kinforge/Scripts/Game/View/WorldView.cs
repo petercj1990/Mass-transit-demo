@@ -25,6 +25,7 @@ namespace Kinforge.Game
         private readonly Dictionary<int, GameObject> _projectiles = new Dictionary<int, GameObject>();
         private readonly Dictionary<int, TelegraphView> _telegraphs = new Dictionary<int, TelegraphView>();
         private readonly Dictionary<int, LineRenderer> _beams = new Dictionary<int, LineRenderer>();
+        private readonly Dictionary<int, Decal> _titanShadows = new Dictionary<int, Decal>();
         private readonly Stack<GameObject> _projectilePool = new Stack<GameObject>();
         private readonly HashSet<int> _seen = new HashSet<int>();
         private readonly List<int> _drop = new List<int>();
@@ -58,6 +59,7 @@ namespace Kinforge.Game
             SyncCaches();
             SyncProjectiles(alpha);
             SyncTelegraphs();
+            SyncTitanShadows();
             SyncBeams();
             foreach (var e in _game.FrameEvents) OnEvent(e);
             Vfx.Update(dt);
@@ -219,6 +221,35 @@ namespace Kinforge.Game
             Prune(_telegraphs, v => v.Destroy());
         }
 
+        /// <summary>
+        /// While a fire wave is building, each Titan casts a pale shadow on the ground away from
+        /// Rustmaw: the strip where kin are sheltered (see Titan.InShadow).
+        /// </summary>
+        private void SyncTitanShadows()
+        {
+            _seen.Clear();
+            var boss = _w.Boss;
+            if (boss != null && boss.BlastPending)
+            {
+                foreach (var u in _w.Units)
+                {
+                    if (!u.IsPlayer || !u.IsTargetable || u.TitanT <= 0f) continue;
+                    Vec2 away = (u.Pos - boss.Body.Pos).Normalized;
+                    if (away == Vec2.Zero) continue;
+                    _seen.Add(u.Id);
+                    if (!_titanShadows.TryGetValue(u.Id, out var d))
+                    {
+                        d = new Decal(_fxRoot, Tex.Rect, new Color(0.6f, 0.82f, 1f, 0.22f), "TitanShadow");
+                        _titanShadows[u.Id] = d;
+                    }
+                    float depth = u.Radius + Balance.TitanShelterDepth;
+                    d.Place(_w, u.Pos + away * (depth * 0.5f), away, u.Radius + Balance.TitanShelterPad, depth * 0.5f, 0.14f);
+                    d.SetActive(true);
+                }
+            }
+            Prune(_titanShadows, d => d.Destroy());
+        }
+
         /// <summary>Mend Beam and Weld Beam are drawn for as long as the channel lasts.</summary>
         private void SyncBeams()
         {
@@ -251,8 +282,8 @@ namespace Kinforge.Game
                 lr.endColor = c;
                 lr.startWidth = 0.12f;
                 lr.endWidth = 0.22f;
-                lr.SetPosition(0, uv.Position + Vector3.up * (u.Def.Height * 0.75f));
-                lr.SetPosition(1, tv.Position + Vector3.up * (target.Def.Height * 0.55f));
+                lr.SetPosition(0, uv.Position + Vector3.up * (uv.VisualHeight * 0.75f));
+                lr.SetPosition(1, tv.Position + Vector3.up * (tv.VisualHeight * 0.55f));
                 if (!lr.gameObject.activeSelf) lr.gameObject.SetActive(true);
             }
             foreach (var kv in _beams)
@@ -286,7 +317,7 @@ namespace Kinforge.Game
             var u = _w.FindUnitAny(id);
             var v = UnitViewFor(id);
             if (u == null || v == null) return Vector3.zero;
-            return v.Position + Vector3.up * (u.Def.Height * liftFrac);
+            return v.Position + Vector3.up * (v.VisualHeight * liftFrac);
         }
 
         private bool Seen(Vec2 p) => _w.IsVisibleToPlayer(p);
@@ -343,7 +374,13 @@ namespace Kinforge.Game
                     if (!caster.IsPlayer && !Seen(caster.Pos)) break;
                     var p = UnitPos(e.A, 0.9f);
                     if (p != Vector3.zero) Vfx.Burst(p, new Color(1f, 0.75f, 0.3f, 0.35f), 0.7f, 0.25f);
-                    if (caster.IsPlayer && e.Ability != AbilityId.MendBeam)
+                    if (e.Ability == AbilityId.TitanForm)
+                    {
+                        // The inhale before the rise.
+                        Vfx.Ring(ToUnity.Ground(_w, caster.Pos, 0.2f), new Color(1f, 0.62f, 0.15f, 0.9f), 1.5f, 0.6f);
+                        hud.Float(p + Vector3.up * 1.1f, "THE MOUNTAIN WAKES!", Palette.KinMark, 1.4f);
+                    }
+                    else if (caster.IsPlayer && e.Ability != AbilityId.MendBeam)
                         hud.Float(p + Vector3.up * 0.9f, AbilityDefs.Get(e.Ability).Name, new Color(1f, 0.85f, 0.55f), 0.7f);
                     break;
                 }
@@ -485,6 +522,70 @@ namespace Kinforge.Game
                     Vfx.Ring(At(e, 0.4f), new Color(1f, 0.45f, 0.1f, 0.95f), e.Value * 1.1f, 0.8f);
                     Vfx.Burst(At(e, 2f), new Color(1f, 0.5f, 0.1f, 0.6f), e.Value * 1.2f, 0.6f);
                     break;
+                case SimEventType.TitanRise:
+                {
+                    UnitViewFor(e.A)?.OnTitanRise();
+                    var ground = At(e, 0.2f);
+                    Vfx.Ring(ground, new Color(1f, 0.62f, 0.15f, 0.95f), 4.5f, 0.7f);
+                    Vfx.Debris(ground, Palette.Earth, 16, 7f);
+                    Vfx.Burst(At(e, 2.4f), new Color(1f, 0.7f, 0.25f, 0.7f), 3f, 0.45f);
+                    if (Seen(e.Pos)) _game.Rig.Shake(0.35f);
+                    break;
+                }
+                case SimEventType.TitanFade:
+                {
+                    var u = _w.FindUnitAny(e.A);
+                    if (u == null) break;
+                    int reason = Mathf.RoundToInt(e.Value);
+                    var head = UnitPos(e.A, 1.15f);
+                    if (head == Vector3.zero) head = At(e, 2.5f);
+                    if (reason == Titan.FadeFelled)
+                    {
+                        hud.Float(head + Vector3.up * 0.6f, "THE TITAN FALLS!", new Color(1f, 0.3f, 0.25f), 1.3f);
+                        if (Seen(e.Pos)) _game.Rig.Shake(0.4f);
+                    }
+                    else if (reason == Titan.FadeNoRoom) hud.Float(head, "No room!", new Color(0.9f, 0.85f, 0.75f), 0.8f);
+                    else if (reason == Titan.FadeCramped) hud.Float(head, "Too cramped!", new Color(0.9f, 0.85f, 0.75f), 0.8f);
+                    else hud.Float(head, "Titan fades", new Color(0.85f, 0.8f, 0.7f), 0.75f);
+                    if (reason != Titan.FadeNoRoom)
+                    {
+                        Vfx.Burst(At(e, 1.6f), new Color(0.75f, 0.75f, 0.75f, 0.4f), 3f, 0.6f); // steam off the cooling war-form
+                        Vfx.Ring(At(e, 0.2f), new Color(0.85f, 0.8f, 0.7f, 0.6f), 2f, 0.5f);
+                    }
+                    break;
+                }
+                case SimEventType.TitanClash:
+                {
+                    bool anvil = e.Value > 0.5f;
+                    _game.Rig.Shake(1f);
+                    Vfx.Burst(At(e, 2f), new Color(1f, 0.95f, 0.75f, 0.95f), 4f, 0.35f);
+                    Vfx.Burst(At(e, 2f), new Color(1f, 0.62f, 0.15f, 0.7f), 6f, 0.6f);
+                    Vfx.Debris(At(e, 1f), anvil ? Palette.Earth : Palette.Ferrite, 26, 11f);
+                    Vfx.Ring(At(e, 0.2f), new Color(1f, 0.85f, 0.4f, 0.95f), 7f, 0.7f);
+                    hud.Float(At(e, 4.5f), anvil ? "ANVIL! STAGGERED" : "THE MOUNTAIN HOLDS!", new Color(1f, 0.82f, 0.25f), 1.6f);
+                    break;
+                }
+                case SimEventType.TitanShelter:
+                {
+                    var from = UnitPos(e.A, 0.7f);
+                    var to = UnitPos(e.B, 0.6f);
+                    if (from != Vector3.zero && to != Vector3.zero) Vfx.Line(from, to, new Color(0.65f, 0.85f, 1f, 0.8f), 0.1f, 0.5f);
+                    if (to != Vector3.zero) hud.Float(to + Vector3.up * 0.9f, "Sheltered", new Color(0.7f, 0.88f, 1f), 0.8f);
+                    break;
+                }
+                case SimEventType.AbilityUnlocked:
+                {
+                    var p = UnitPos(e.A, 1.25f);
+                    if (p == Vector3.zero) break;
+                    if (e.Ability == AbilityId.TitanForm)
+                    {
+                        UnitViewFor(e.A)?.OnTitanUnlocked();
+                        Vfx.Ring(At(e, 0.2f), new Color(1f, 0.62f, 0.15f, 0.95f), 3f, 0.9f);
+                        hud.Float(p + Vector3.up * 0.4f, "TITAN FORM UNLOCKED", Palette.KinMark, 1.25f);
+                    }
+                    else hud.Float(p + Vector3.up * 0.4f, AbilityDefs.Get(e.Ability).Name + " unlocked", Palette.KinMark, 1f);
+                    break;
+                }
                 case SimEventType.Victory:
                     _game.Rig.Shake(1f);
                     Vfx.Ring(At(e, 0.4f), new Color(1f, 0.75f, 0.25f, 1f), 25f, 2f);

@@ -33,7 +33,7 @@ namespace Kinforge.Sim
                 Vec2 offset = FormationOffset(UnitDefs.SquadRoles[i], sq.Forward, 1f);
                 var u = CreateUnit(w, UnitDefs.SquadRoles[i], sq, w.Nav.NearestWalkable(at + offset));
                 if (doctrineTier > 0) u.Doctrine.SeedTier(doctrineTier);
-                RefreshAbilitySlots(u);
+                while (RefreshAbilitySlots(u) != null) { }
             }
             w.Squads.Add(sq);
             return sq;
@@ -85,14 +85,40 @@ namespace Kinforge.Sim
             return VhornNames[w.Rng.Range(0, VhornNames.Length)] + " " + (char)('A' + w.Rng.Range(0, 26));
         }
 
-        /// <summary>Opens ability slot 3 once a unit reaches Doctrine tier 2 in any command.</summary>
-        public static bool RefreshAbilitySlots(Unit u)
+        /// <summary>
+        /// Doctrine tier (in any command) that opens each ability slot: slots 1-2 from the start,
+        /// slot 3 at tier 2 and slot 4 (the Shieldbearer's Titan Form) at tier 3.
+        /// </summary>
+        public static int SlotUnlockTier(int slot) => slot < 2 ? 0 : (slot == 2 ? Balance.ThirdAbilityTier : Balance.FourthAbilityTier);
+
+        /// <summary>Opens the next slot the unit's Doctrine allows and returns it, or null. Call until null.</summary>
+        public static AbilitySlot RefreshAbilitySlots(Unit u)
         {
-            if (u.Abilities == null || u.Abilities.Length < 3 || u.Doctrine == null) return false;
-            if (u.Abilities[2].Unlocked) return false;
-            if (u.Doctrine.MaxTier < Balance.ThirdAbilityTier) return false;
-            u.Abilities[2].Unlocked = true;
-            return true;
+            if (u.Abilities == null || u.Doctrine == null) return null;
+            int tier = u.Doctrine.MaxTier;
+            for (int i = 2; i < u.Abilities.Length; i++)
+            {
+                if (u.Abilities[i].Unlocked || tier < SlotUnlockTier(i)) continue;
+                u.Abilities[i].Unlocked = true;
+                return u.Abilities[i];
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Playtest drill (F7): raises every command of a squad to at least <paramref name="tier"/> and
+        /// opens the ability slots that tier allows, like a Drill Grounds session would.
+        /// </summary>
+        public static void DebugDrill(World w, Squad sq, int tier)
+        {
+            foreach (var m in sq.Members)
+            {
+                if (m.Doctrine == null) continue;
+                m.Doctrine.SeedTier(tier);
+                for (var slot = RefreshAbilitySlots(m); slot != null; slot = RefreshAbilitySlots(m))
+                    w.Emit(SimEventType.AbilityUnlocked, m.Id, 0, m.Pos, 0f, DamageType.Kinetic, slot.Def.Id);
+            }
+            w.Alert($"{sq.Name} drilled to Doctrine tier {tier} in every command (playtest key F7).", sq.Centroid, 1);
         }
 
         /// <summary>Marching / idle formation: tank leads, healer and Siegewright behind.</summary>

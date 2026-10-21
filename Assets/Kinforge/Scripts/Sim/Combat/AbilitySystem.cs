@@ -18,9 +18,10 @@ namespace Kinforge.Sim
             {
                 case AbilityId.TauntRoar:
                 {
-                    w.QueryUnits(u.Pos, def.Radius, hostile, hits);
+                    float reach = Titan.TauntRadius(u, def);
+                    w.QueryUnits(u.Pos, reach, hostile, hits);
                     foreach (var e in hits) Combat.Taunt(w, e, u, def.Duration);
-                    w.Emit(SimEventType.AbilityImpact, u.Id, 0, u.Pos, def.Radius, def.Type, id);
+                    w.Emit(SimEventType.AbilityImpact, u.Id, 0, u.Pos, reach, def.Type, id);
                     break;
                 }
                 case AbilityId.ShieldBash:
@@ -45,6 +46,9 @@ namespace Kinforge.Sim
                     w.Emit(SimEventType.AbilityImpact, u.Id, 0, u.Pos + face * 2.5f, def.Radius, def.Type, id);
                     break;
                 }
+                case AbilityId.TitanForm:
+                    Titan.Begin(w, u);
+                    break;
                 case AbilityId.RegenField:
                     StructureSystem.SpawnField(w, u, StructureKind.RegenField, point);
                     w.Emit(SimEventType.AbilityImpact, u.Id, 0, point, def.Radius, def.Type, id);

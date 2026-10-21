@@ -67,6 +67,10 @@ namespace Kinforge.Sim
         public float VictoryAt = -1f;
         public int InspectedUnitId;
         public bool RevealMap;
+        /// <summary>Switch for A/B balance runs: false and no Shieldbearer ever grows (per world, so tests can run in parallel).</summary>
+        public bool TitanEnabled = true;
+        /// <summary>Set the first time any Titan rises, for the one-time explainer alert.</summary>
+        public bool TitanSeen;
 
         // Per-world scratch space, so several worlds can tick on different threads (tests, a future host).
         internal readonly BrainContext BrainCtx = new BrainContext();

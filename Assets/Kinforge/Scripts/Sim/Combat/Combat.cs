@@ -69,7 +69,7 @@ namespace Kinforge.Sim
             {
                 if (src != null && src.Faction == Faction.Player)
                 {
-                    float tm = srcUnit != null ? srcUnit.Def.ThreatMul : 1f;
+                    float tm = srcUnit != null ? srcUnit.ThreatMul : 1f;
                     tu.Threat?.Add(src.Id, dmg * tm);
                     if (w.Bestiary.Discover(tu.Def.Family, type))
                     {
@@ -183,6 +183,7 @@ namespace Kinforge.Sim
         {
             if (u == null || u.Life != LifeState.Active) return;
             if (u.Kind == UnitKind.Rustmaw) seconds *= 0.4f;
+            if (u.TitanT > 0f) seconds *= 1f - (1f - Balance.TitanStunMul) * u.TitanT;
             u.Status.StunTime = Math.Max(u.Status.StunTime, seconds);
             Interrupt(w, u);
         }
@@ -197,7 +198,8 @@ namespace Kinforge.Sim
         public static void Knockback(World w, Unit u, Vec2 dir, float dist, float time = 0.3f)
         {
             if (u == null || u.Life != LifeState.Active) return;
-            float heavy = u.Def.Mass >= 4f ? u.Def.Mass / 2.5f : 1f;
+            float mass = u.Mass;
+            float heavy = mass >= 4f ? mass / 2.5f : 1f;
             dist /= heavy;
             if (dist < 0.2f) return;
             u.ForcedVel = dir.Normalized * (dist / time);
@@ -240,7 +242,7 @@ namespace Kinforge.Sim
             u.Life = LifeState.Downed;
             u.Hp = 0f;
             u.DownedAt = w.Time;
-            ResetForIncapacitated(u);
+            ResetForIncapacitated(w, u);
             if (u.Fight != null) u.Fight.Downs++;
             ForgetTarget(w, u.Id);
             w.Emit(SimEventType.Downed, u.Id, 0, u.Pos);
@@ -252,7 +254,7 @@ namespace Kinforge.Sim
             u.Life = LifeState.Dead;
             u.Hp = 0f;
             u.DiedAt = w.Time;
-            ResetForIncapacitated(u);
+            ResetForIncapacitated(w, u);
             if (u.Fight != null) u.Fight.Died = true;
             ForgetTarget(w, u.Id);
             LoseUnbanked(w, u);
@@ -286,8 +288,9 @@ namespace Kinforge.Sim
             if (lost >= 1f) w.Alert($"{u.Name} lost {lost:0} unbanked Doctrine XP.", 1);
         }
 
-        private static void ResetForIncapacitated(Unit u)
+        private static void ResetForIncapacitated(World w, Unit u)
         {
+            Titan.EndInstant(w, u, Titan.FadeFelled);
             u.Action = UnitAction.None;
             u.ActionTimer = 0f;
             u.Path.Clear();
@@ -417,6 +420,7 @@ namespace Kinforge.Sim
             u.CoreHolder = 0;
             u.Pos = at;
             u.PrevPos = at;
+            Titan.EndInstant(null, u, Titan.FadeFelled);
             u.Hp = u.MaxHp;
             u.Status = default;
             u.Action = UnitAction.None;

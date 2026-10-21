@@ -121,6 +121,9 @@ namespace Kinforge.Sim
         TailSlam,
         WeldBeam,
         RustmawSwipe,
+
+        // Shieldbearer ability slot 4 (opens at Doctrine tier 3)
+        TitanForm,
     }
 
     public enum AbilityTarget : byte

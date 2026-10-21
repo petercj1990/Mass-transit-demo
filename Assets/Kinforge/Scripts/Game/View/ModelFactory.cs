@@ -11,6 +11,8 @@ namespace Kinforge.Game
         public Material KinMat;
         public Material VentMat;
         public Material BodyMat;
+        /// <summary>Shieldbearer only: the war-form's extra parts, shown while it is a Titan.</summary>
+        public GameObject TitanParts;
         public readonly List<Renderer> Renderers = new List<Renderer>();
         public float Height;
     }
@@ -103,6 +105,7 @@ namespace Kinforge.Game
                     Prim.Box(r, new Vector3(-0.73f, 1.05f, 0.47f), new Vector3(0.04f, 1.1f, 0.12f), m.KinMat, new Vector3(0f, -12f, 0f), false);
                     Prim.Tube(r, new Vector3(0.62f, 1.0f, 0.5f), new Vector3(0.07f, 0.34f, 0.07f), darkAlloy, new Vector3(30f, 0f, 0f));
                     Prim.Ball(r, new Vector3(0.62f, 1.28f, 0.68f), new Vector3(0.22f, 0.22f, 0.22f), alloy);
+                    TitanParts(m, bone);
                     break;
                 case UnitKind.Mender:
                     Prim.Box(r, new Vector3(0f, 1.45f, -0.32f), new Vector3(0.44f, 0.5f, 0.2f), darkAlloy);
@@ -130,6 +133,23 @@ namespace Kinforge.Game
                     Prim.Box(r, new Vector3(0.62f, 1.38f, 0.64f), new Vector3(0.32f, 0.2f, 0.2f), alloy, new Vector3(25f, 0f, 0f));
                     break;
             }
+        }
+
+        /// <summary>Titan Form's war-form: a crown of forge-fire over the horns, a blazing shield rim and bone shoulder spikes.</summary>
+        private static void TitanParts(UnitModel m, Material bone)
+        {
+            var t = Prim.Node("TitanParts", m.Rig);
+            for (int i = 0; i < 4; i++)
+            {
+                float tilt = (i - 1.5f) * 16f;
+                Prim.Box(t, new Vector3(-0.21f + i * 0.14f, 2.06f, 0.3f), new Vector3(0.06f, 0.3f, 0.06f), m.KinMat, new Vector3(-12f, 0f, -tilt), false);
+            }
+            Prim.Box(t, new Vector3(-0.73f, 1.72f, 0.47f), new Vector3(0.05f, 0.05f, 0.82f), m.KinMat, new Vector3(0f, -12f, 0f), false);
+            Prim.Box(t, new Vector3(-0.73f, 0.4f, 0.47f), new Vector3(0.05f, 0.05f, 0.82f), m.KinMat, new Vector3(0f, -12f, 0f), false);
+            Prim.Box(t, new Vector3(-0.52f, 1.8f, 0.02f), new Vector3(0.07f, 0.32f, 0.07f), bone, new Vector3(0f, 0f, 24f));
+            Prim.Box(t, new Vector3(0.52f, 1.8f, 0.02f), new Vector3(0.07f, 0.32f, 0.07f), bone, new Vector3(0f, 0f, -24f));
+            t.gameObject.SetActive(false);
+            m.TitanParts = t.gameObject;
         }
 
         private static void Cratermaw(UnitModel m, Unit u, float scale, Color body, Color eye)

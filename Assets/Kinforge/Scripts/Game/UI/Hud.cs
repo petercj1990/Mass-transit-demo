@@ -252,9 +252,9 @@ namespace Kinforge.Game
                 if (u.Kind == UnitKind.Rustmaw) continue;
                 bool player = u.IsPlayer;
                 if (!player && u.HpFraction >= 0.999f && u.Group != null && u.Group.State == GroupState.Idle) continue;
-                if (!ToGui(v.Position + Vector3.up * (u.Def.Height + 0.55f), out var p)) continue;
+                if (!ToGui(v.Position + Vector3.up * (v.VisualHeight + 0.55f), out var p)) continue;
                 if (p.x < -50 || p.y < -50 || p.x > W + 50 || p.y > H + 50) continue;
-                float wBar = player ? 30f : 34f;
+                float wBar = (player ? 30f : 34f) * (1f + 0.33f * u.TitanT);
                 var r = new Rect(p.x - wBar / 2, p.y, wBar, 4f);
                 if (u.Life == LifeState.Downed)
                 {
@@ -267,6 +267,8 @@ namespace Kinforge.Game
                     Swatch(new Rect(r.x, r.y - 2f, r.width, 1.5f), Palette.Squad(u.Squad.ColorIndex));
                 if (u.Action == UnitAction.Casting || (u.Action == UnitAction.Channel && u.ActionTotal > 0.2f))
                     Bar(new Rect(r.x, r.y + 5f, r.width, 2f), 1f - u.ActionTimer / Mathf.Max(0.01f, u.ActionTotal), new Color(1f, 0.8f, 0.3f), new Color(0f, 0f, 0f, 0.4f));
+                else if (u.TitanTime > 0f)
+                    Bar(new Rect(r.x, r.y + 5f, r.width, 2f), u.TitanTime / AbilityDefs.Get(AbilityId.TitanForm).Duration, Palette.KinMark, new Color(0f, 0f, 0f, 0.4f));
             }
 
             // Floating combat text
@@ -320,7 +322,7 @@ namespace Kinforge.Game
         private void DrawAlerts(World w)
         {
             float y = 34;
-            if (w.Boss != null && w.Boss.Active) y += 74;
+            if (w.Boss != null && w.Boss.Active) y += TitanChips(w) != null ? 90 : 74;
             int shown = 0;
             for (int i = w.Alerts.Count - 1; i >= 0 && shown < 4; i--)
             {
@@ -354,8 +356,10 @@ namespace Kinforge.Game
             var boss = w.Boss;
             if (boss == null || !boss.Active) return;
             var body = boss.Body;
-            var r = Panel(new Rect(W / 2 - 280, 32, 560, 70));
+            string titans = TitanChips(w);
+            var r = Panel(new Rect(W / 2 - 280, 32, 560, titans != null ? 86 : 70));
             GUI.Label(new Rect(r.x + 10, r.y + 4, 540, 20), $"<b>RUSTMAW</b>   {boss.PhaseName}", _title);
+            if (titans != null) GUI.Label(new Rect(r.x + 10, r.y + 63, 540, 18), titans, _small);
             Bar(new Rect(r.x + 10, r.y + 26, 540, 12), body.HpFraction, boss.Overheated ? new Color(1f, 0.4f, 0.1f) : new Color(0.85f, 0.25f, 0.2f), new Color(0f, 0f, 0f, 0.6f));
             Swatch(new Rect(r.x + 10 + 540 * 0.7f, r.y + 24, 2, 16), new Color(1f, 1f, 1f, 0.6f));
             Swatch(new Rect(r.x + 10 + 540 * 0.35f, r.y + 24, 2, 16), new Color(1f, 1f, 1f, 0.6f));
@@ -363,13 +367,31 @@ namespace Kinforge.Game
             string hint;
             if (boss.Burrowed) hint = "Burrowed! Scrap hounds incoming. Watch for where it erupts.";
             else if (boss.Staggered) hint = "<color=#ffd34d>STAGGERED: burst it now, hit the vents!</color>";
-            else if (boss.BlastPending) hint = "<color=#ff7a3d>FIRE WAVE: get behind a rampart (Stack)!</color>";
+            else if (boss.BlastPending) hint = "<color=#ff7a3d>FIRE WAVE: get behind a rampart or a Titan's shield (Stack)!</color>";
             else if (boss.VentsExposed) hint = "<color=#ffd34d>Rear vents exposed: hits from behind deal double damage</color>";
             else if (boss.Phase == 3) hint = $"Overheat: takes double damage.  Next fire wave in {boss.NextBlastIn:0}s";
             else if (boss.Phase == 2 && boss.MendersAlive > 0) hint = $"<color=#ffd34d>{boss.MendersAlive} Scrap Mender(s) welding its plating: right-click them, Focus Fire!</color>";
-            else hint = boss.NextChargeIn > 0f ? $"Next line charge in ~{boss.NextChargeIn:0}s  (Spread Out; Warwright ramparts make it crash)" : "Line charge!";
+            else hint = boss.NextChargeIn > 0f ? $"Next line charge in ~{boss.NextChargeIn:0}s  (Spread Out; ramparts make it crash, a Titan stops it dead)" : "Line charge!";
             if (boss.PhaseTime > 80f) hint += "   <color=#ff6050>Enraged</color>";
             GUI.Label(new Rect(r.x + 10, r.y + 44, 540, 20), hint, _small);
+        }
+
+        /// <summary>One chip per Shieldbearer in the raid with Titan Form unlocked: risen, ready or cooling down.</summary>
+        private static string TitanChips(World w)
+        {
+            System.Text.StringBuilder sb = null;
+            foreach (var u in w.Units)
+            {
+                if (!u.IsPlayer || u.Life != LifeState.Active || u.Garrisoned || !w.InArena(u.Pos, 6f)) continue;
+                var slot = u.Slot(AbilityId.TitanForm);
+                if (slot == null || !slot.Unlocked) continue;
+                string state = u.TitanTime > 0f ? $"<color=#ffb040>RISEN {u.TitanTime:0}s</color>"
+                    : slot.Cooldown > 0f ? $"<color=#999999>{slot.Cooldown:0}s</color>" : "<color=#8fdc8f>ready</color>";
+                sb ??= new System.Text.StringBuilder();
+                if (sb.Length > 0) sb.Append("   ");
+                sb.Append("TITAN ").Append(u.Name).Append(": ").Append(state);
+            }
+            return sb?.ToString();
         }
 
         private void DrawTooltip(World w)

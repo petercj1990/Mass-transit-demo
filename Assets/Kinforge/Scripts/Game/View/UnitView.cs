@@ -10,11 +10,16 @@ namespace Kinforge.Game
         public readonly UnitModel Model;
         public bool Visible { get; private set; }
         public Vector3 Position => Model.Root.transform.position;
+        /// <summary>Model height as drawn now, including Titan Form, for anchors above the head.</summary>
+        public float VisualHeight => Model.Height * (1f + (Balance.TitanHeightMul - 1f) * _titanVis);
 
         private float _yaw;
         private float _swing;
         private float _hurt;
         private float _tierPulse;
+        private float _titanVis;   // smoothed Titan Form size, 0..1
+        private bool _titanGrowing;
+        private float _flex;       // Titan Form unlock flex, 1 -> 0
         private float _lastKin = -1f;
         private float _lastVent = -1f;
         private Color _lastBody = Color.clear;
@@ -40,6 +45,8 @@ namespace Kinforge.Game
         public void OnSwing() => _swing = 1f;
         public void OnHurt() => _hurt = 1f;
         public void OnTierUp() => _tierPulse = 1f;
+        public void OnTitanRise() => _tierPulse = Mathf.Max(_tierPulse, 0.5f);
+        public void OnTitanUnlocked() => _flex = 1f;
 
         public void Sync(World w, Unit u, float alpha, float dt, bool selected, Color squadColor)
         {
@@ -62,6 +69,11 @@ namespace Kinforge.Game
             root.position = new Vector3(p.X, y, p.Z);
             _yaw = Mathf.LerpAngle(_yaw, u.Facing * Mathf.Rad2Deg, 1f - Mathf.Exp(-14f * dt));
             root.rotation = Quaternion.Euler(0f, _yaw, 0f);
+
+            // Grow with the sim's ramp; shrink smoothly even when the form ends at once (felled, garrisoned).
+            _titanGrowing = u.TitanT >= _titanVis;
+            _titanVis = _titanGrowing ? u.TitanT : Mathf.MoveTowards(_titanVis, u.TitanT, dt * 2.5f);
+            _flex = Mathf.Max(0f, _flex - dt);
 
             Pose(w, u, dt, now);
             Glow(w, u, dt, now);
@@ -105,12 +117,36 @@ namespace Kinforge.Game
                 if (u.Action == UnitAction.Gathering) euler.x += 12f + Mathf.Sin(now * 7f + Id) * 12f;
                 if (u.Status.StunTime > 0f || u.Status.FrozenTime > 0f) euler.z += Mathf.Sin(now * 20f) * 3f;
                 if (u.Kind == UnitKind.Rustmaw && w.Boss != null && w.Boss.Staggered) euler.z += Mathf.Sin(now * 14f) * 5f;
+                if (u.Action == UnitAction.Casting && u.ActionAbility == AbilityId.TitanForm)
+                {
+                    // Inhale: crouch before the rise.
+                    pos.y -= 0.18f;
+                    euler.x += 12f;
+                }
+                euler.x += 4f * _titanVis; // the giant leans into the fight
             }
             Model.Rig.localPosition = pos;
             Model.Rig.localRotation = Quaternion.Euler(euler);
             float pulse = 1f + _hurt * 0.06f;
             float baseScale = u.Kind == UnitKind.Shieldbearer ? 1.08f : (u.Kind == UnitKind.ScrapHound ? 0.72f : 1f);
-            Model.Rig.localScale = Vector3.one * (baseScale * pulse);
+            float grow = _titanGrowing ? EaseOutBack(_titanVis) : _titanVis * _titanVis * (3f - 2f * _titanVis);
+            float titan = 1f + (Balance.TitanHeightMul - 1f) * grow;
+            float flex = _flex > 0f ? 1f + 0.25f * Mathf.Sin((1f - _flex) * Mathf.PI) : 1f;
+            Model.Rig.localScale = Vector3.one * (baseScale * pulse * titan * flex);
+            if (Model.TitanParts != null)
+            {
+                bool parts = _titanVis > 0.55f;
+                if (Model.TitanParts.activeSelf != parts) Model.TitanParts.SetActive(parts);
+            }
+        }
+
+        /// <summary>Ease-out with a small overshoot (about 8%), so the rise lands with a little bounce.</summary>
+        private static float EaseOutBack(float x)
+        {
+            const float c1 = 1.4f;
+            const float c3 = c1 + 1f;
+            float t = x - 1f;
+            return 1f + c3 * t * t * t + c1 * t * t;
         }
 
         private void Glow(World w, Unit u, float dt, float now)
@@ -122,6 +158,10 @@ namespace Kinforge.Game
                 float k = 0.45f + 0.4f * (u.Doctrine != null ? u.Doctrine.MaxTier : 0);
                 if (u.Injured) k *= 0.35f;
                 if (u.Life != LifeState.Active) k = 0.05f;
+                if (_titanVis > 0f) k *= 1f + _titanVis * (1.4f + 0.4f * Mathf.Sin(now * 6f)); // the war-form's kin-marks blaze and breathe
+                if (u.TitanTime > 0f && u.TitanTime < 2f && Mathf.Sin(now * 75f) > 0.3f) k *= 0.55f; // flickering as it runs out
+                if (u.Action == UnitAction.Casting && u.ActionAbility == AbilityId.TitanForm)
+                    k *= 1f + 4f * (1f - u.ActionTimer / Mathf.Max(0.01f, u.ActionTotal));
                 k += _tierPulse * 3f;
                 if (Mathf.Abs(k - _lastKin) > 0.02f)
                 {
@@ -165,20 +205,29 @@ namespace Kinforge.Game
         private void StatusEffects(Unit u, float now)
         {
             bool active = u.Life == LifeState.Active;
-            float h = Model.Height;
+            float h = VisualHeight;
 
             bool burning = active && u.Status.BurnTime > 0f;
             if (burning || _burn != null)
             {
                 Fx(ref _burn, PrimitiveType.Sphere, new Vector3(0f, h * 0.5f, 0f), Vector3.one, new Color(1f, 0.45f, 0.1f, 0.35f));
                 _burn.SetActive(burning);
-                if (burning) _burn.transform.localScale = Vector3.one * (h * 0.55f + Mathf.Sin(now * 30f + Id) * 0.08f);
+                if (burning)
+                {
+                    _burn.transform.localPosition = new Vector3(0f, h * 0.5f, 0f);
+                    _burn.transform.localScale = Vector3.one * (h * 0.55f + Mathf.Sin(now * 30f + Id) * 0.08f);
+                }
             }
             bool frozen = active && u.Status.FrozenTime > 0f;
             if (frozen || _ice != null)
             {
                 Fx(ref _ice, PrimitiveType.Cube, new Vector3(0f, h * 0.5f, 0f), new Vector3(1.2f, h, 1.2f) * (u.Radius * 1.4f), new Color(0.6f, 0.9f, 1f, 0.45f));
                 _ice.SetActive(frozen);
+                if (frozen)
+                {
+                    _ice.transform.localPosition = new Vector3(0f, h * 0.5f, 0f);
+                    _ice.transform.localScale = new Vector3(1.2f, h, 1.2f) * (u.Radius * 1.4f);
+                }
             }
             bool caged = active && u.Status.RootTime > 0f;
             if (caged || _cage != null)
@@ -233,7 +282,7 @@ namespace Kinforge.Game
                 _cores[i].SetActive(on);
                 if (!on) continue;
                 float a = now * 2f + i * Mathf.PI * 2f / Mathf.Max(1, n);
-                _cores[i].transform.localPosition = new Vector3(Mathf.Cos(a) * 0.45f, Model.Height + 0.45f, Mathf.Sin(a) * 0.45f);
+                _cores[i].transform.localPosition = new Vector3(Mathf.Cos(a) * 0.45f, VisualHeight + 0.45f, Mathf.Sin(a) * 0.45f);
             }
         }
 
@@ -251,8 +300,9 @@ namespace Kinforge.Game
             }
             if (!_ring.activeSelf) _ring.SetActive(true);
             Mats.SetColor(_ringMat, new Color(c.r, c.g, c.b, u.Injured ? 0.55f : 0.9f));
-            // keep the ring flat on the ground even while the rig tilts
+            // keep the ring flat on the ground even while the rig tilts, and sized to the body (Titan Form)
             _ring.transform.localPosition = new Vector3(0f, 0.08f - u.HeightOffset, 0f);
+            _ring.transform.localScale = Vector3.one * (u.Radius * 2.6f + 0.4f);
         }
     }
 }

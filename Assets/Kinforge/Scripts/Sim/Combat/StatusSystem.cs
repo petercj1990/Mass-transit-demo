@@ -25,6 +25,7 @@ namespace Kinforge.Sim
                         if (s.Cooldown > 0f) s.Cooldown -= dt;
                     }
                 }
+                if (u.TitanTime > 0f || u.TitanT > 0f) Titan.Tick(w, u, dt);
 
                 ref var st = ref u.Status;
 

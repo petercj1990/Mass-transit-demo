@@ -99,7 +99,8 @@ namespace Kinforge.Game
                             hp = Color.clear;
                             break;
                         default:
-                            state = m.Injured ? $"<color=#ffb040>injured</color>" : (m.Action == UnitAction.Resting ? "resting" : "");
+                            state = m.TitanTime > 0f ? $"<color=#ffb040>TITAN</color>"
+                                : m.Injured ? $"<color=#ffb040>injured</color>" : (m.Action == UnitAction.Resting ? "resting" : "");
                             hp = m.Injured ? new Color(0.95f, 0.65f, 0.2f) : new Color(0.35f, 0.85f, 0.4f);
                             break;
                     }
@@ -241,6 +242,11 @@ namespace Kinforge.Game
             string gear = $"{(u.WeaponTier > 1 ? "Ferrite" : "Scrap")} arms, {(u.ArmorTier > 1 ? "ferrite" : "scrap")} plate";
             GUI.Label(new Rect(x, y, cw, 18), $"{u.Hp:0}/{u.MaxHp:0} hp   armour {u.Armor:0}   {state}", _small);
             y += 16;
+            if (u.TitanTime > 0f)
+            {
+                GUI.Label(new Rect(x, y, cw, 16), $"<color=#{Hex(Palette.KinMark)}>Titan Form</color>: +35% health, +{Balance.TitanArmor:0} armour, x{Balance.TitanThreatMul:0.#} threat, slower", _tiny);
+                y += 14;
+            }
             GUI.Label(new Rect(x, y, cw, 18), $"{gear}   fights {u.Fights}   kills {u.Kills}", _tiny);
             y += 18;
 
@@ -249,11 +255,12 @@ namespace Kinforge.Game
             y += 17;
             if (u.Abilities != null)
             {
-                foreach (var s in u.Abilities)
+                for (int i = 0; i < u.Abilities.Length; i++)
                 {
-                    string txt = s.Unlocked
-                        ? (s.Cooldown > 0f ? $"{s.Def.Name} <color=#999999>{s.Cooldown:0.0}s</color>" : $"{s.Def.Name} <color=#8fdc8f>ready</color>")
-                        : $"<color=#777777>{s.Def.Name}: unlocks at Doctrine tier {Balance.ThirdAbilityTier}</color>";
+                    var s = u.Abilities[i];
+                    string txt = !s.Unlocked ? $"<color=#777777>{s.Def.Name}: unlocks at Doctrine tier {PlayerUnits.SlotUnlockTier(i)} (any command)</color>"
+                        : s.Def.Id == AbilityId.TitanForm && u.TitanTime > 0f ? $"{s.Def.Name} <color=#ffb040>ACTIVE {u.TitanTime:0.0}s</color>"
+                        : s.Cooldown > 0f ? $"{s.Def.Name} <color=#999999>{s.Cooldown:0.0}s</color>" : $"{s.Def.Name} <color=#8fdc8f>ready</color>";
                     GUI.Label(new Rect(x + 6, y, cw - 6, 16), txt, _tiny);
                     y += 14;
                 }
@@ -552,7 +559,7 @@ namespace Kinforge.Game
 
         private void DrawHelp()
         {
-            var r = Panel(new Rect(W / 2 - 330, 70, 660, 560));
+            var r = Panel(new Rect(W / 2 - 330, 70, 660, 610));
             GUI.Label(new Rect(r.x + 14, r.y + 10, 600, 24), "<b>KINFORGE</b>  MVP slice: The Craters", _title);
             string body =
                 "You are an unseen commander. Your kin-bands of five Vhorn (Shieldbearer, Mender, Bruiser, Siegewright, Warwright) " +
@@ -566,9 +573,11 @@ namespace Kinforge.Game
                 "<b>Other</b>  H return home, J garrison, K stop.  F2 base, F3 battle reports, Esc closes panels.\n\n" +
                 "<b>Injury</b>  A Vhorn dropped once is Downed and gets up Injured (-20% health and speed). Rest clears it. Dropped again while Injured: killed. " +
                 "A squadmate carries its kin-core home; the Kin Cradle regrows it with Doctrine and Instinct intact (unbanked XP is lost). A full wipe drops a core cache.\n\n" +
+                "<b>Titan Form</b>  At Doctrine tier 3 (any command) a Shieldbearer unlocks its fourth ability: it grows to titan size for 15 s. The giant slows enemies at its shield, " +
+                "catches shots aimed past it, stops Rustmaw's charge dead and shelters kin behind it from fire waves. The tank decides when; Doctrine makes it decide well.\n\n" +
                 "<b>Goal</b>  Gather ferrite and hide, garrison a squad to run the Smelter and Salvage Bench, upgrade the War Hall for a second kin-band, craft ferrite gear and the " +
                 "Breach Sigil, then take two squads into Breach Hold (north) and kill <b>Rustmaw</b>.\n\n" +
-                "<b>Playtest keys</b>  F9 game speed x1/x2/x4, F10 skip Rustmaw to its next phase, F11 reveal map.";
+                "<b>Playtest keys</b>  F7 drill the selected squads to Doctrine tier 3 (try Titan Form now), F9 game speed x1/x2/x4, F10 skip Rustmaw to its next phase, F11 reveal map.";
             GUI.Label(new Rect(r.x + 14, r.y + 40, r.width - 28, r.height - 80), body, _wrapSmall);
             if (GUI.Button(new Rect(r.x + r.width / 2 - 90, r.yMax - 36, 180, 26), "Start  (F1 toggles this)", _buttonOn)) _showHelp = false;
             if (GUI.Button(new Rect(r.x + 14, r.yMax - 36, 150, 26), "New random world", _button))

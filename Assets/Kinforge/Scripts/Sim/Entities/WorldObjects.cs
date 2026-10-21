@@ -106,6 +106,8 @@ namespace Kinforge.Sim
         public int OwnerId;
         /// <summary>Walls between the origin and a unit protect it (fire waves).</summary>
         public bool CoverBlocks;
+        /// <summary>A charge a grown Titan can stand in front of and stop.</summary>
+        public bool Catchable;
         public float CreatedAt;
         public string Label;
         public bool Removed;

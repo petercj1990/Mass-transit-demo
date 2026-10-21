@@ -32,6 +32,11 @@ namespace Kinforge.Sim
         TierUp,         // A reached tier Value in Ability-slot-free command (B = command)
         Victory,
         Knockback,
+        TitanRise,      // A grew into Titan Form
+        TitanFade,      // A shrank back; Value: 0 timer, 1 too cramped, 2 no room to grow, 3 felled, 4 left the fight
+        TitanClash,     // A (Titan) stopped B (Rustmaw) dead; Value 1 when a rampart behind A made it an anvil
+        TitanShelter,   // A (Titan) shielded B from a fire wave
+        AbilityUnlocked, // A opened a new ability slot (Ability)
     }
 
     public struct SimEvent

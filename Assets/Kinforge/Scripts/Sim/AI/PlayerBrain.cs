@@ -19,7 +19,7 @@ namespace Kinforge.Sim
             ConsiderDodge(c);
 
             var sq = c.Sq;
-            bool marching = SquadSystem.IsTraveling(w, sq) && (sq.Task == SquadTask.FallBack || !sq.InCombat || sq.Forced);
+            bool marching = SquadSystem.IsMarching(w, sq);
             if (sq.Task == SquadTask.FallBack) FallBack(c);
             else if (marching) March(c);
             else if (!sq.InCombat || c.Enemies.Count == 0) Peacetime(c);
@@ -45,12 +45,17 @@ namespace Kinforge.Sim
 
         private static void ConsiderDodge(BrainContext c)
         {
+            var u = c.U;
+            bool growing = u.Action == UnitAction.Casting && u.ActionAbility == AbilityId.TitanForm;
             foreach (var t in c.W.Telegraphs)
             {
                 if (t.Removed || t.Threatens != Faction.Player || t.Remaining <= 0f) continue;
-                if (!t.Contains(c.U.Pos, c.U.Radius)) continue;
+                // A grown Titan may step INTO a charge lane, so this comes before the "am I in it" check.
+                if (u.TitanTime > 0f && TitanHolds(c, t)) continue;
+                if (!t.Contains(u.Pos, u.Radius)) continue;
+                if (growing) continue; // finish growing: the cast is short and the giant can take it
                 float reaction = c.P(InstinctParam.Reaction);
-                if (t.CoverBlocks && !c.W.Nav.SightClear(t.Pos, c.U.Pos))
+                if (t.CoverBlocks && (!c.W.Nav.SightClear(t.Pos, u.Pos) || Titan.Shelters(c.W, t.Pos, u)))
                 {
                     // Already behind a wall: stay there until it lands.
                     if (c.W.Time - t.CreatedAt >= reaction * 0.5f)
@@ -271,6 +276,249 @@ namespace Kinforge.Sim
             }
 
             if (anchored && Vec2.Distance(u.Pos, slot) > 1.2f) c.Offer(36f, BrainContext.MoveTo(slot), c.Debug ? "Front of the line" : null);
+
+            if (u.Abilities.Length > 3) TitanChoices(c);
+        }
+
+        // ---- Titan Form ---------------------------------------------------------------------
+        // No Instinct parameters here: Instinct draws from the world RNG, and new draws would shift
+        // every fight even for squads that never grow.
+
+        /// <summary>Reads Rustmaw's tells like the Warwright's charge walls: braced postures from tier 3, any command from tier 4.</summary>
+        private static bool TitanReads(BrainContext c)
+        {
+            bool bracing = c.Cmd == CommandType.SpreadOut || c.Cmd == CommandType.DefensiveFormation || c.Cmd == CommandType.HoldPosition
+                           || c.Cmd == CommandType.Fortify || c.Cmd == CommandType.Stack;
+            return (c.Tier >= 3 && bracing) || c.Tier >= 4;
+        }
+
+        /// <summary>Plants itself as cover for the fire wave: Stack and Fortify from tier 3, anything from tier 4 (the cover rule).</summary>
+        private static bool TitanShelterReads(BrainContext c) =>
+            TitanReads(c) && (c.Cmd == CommandType.Stack || c.Cmd == CommandType.Fortify || c.Tier >= 4);
+
+        private static float TitanReach(BrainContext c) => c.Tier >= 5 ? 5f : (c.Tier >= 4 ? 4f : 2f);
+
+        private static void TitanChoices(BrainContext c)
+        {
+            var u = c.U;
+            var w = c.W;
+            var boss = w.Boss;
+            if (!w.TitanEnabled || u.TitanTime > 0f || c.Cmd == CommandType.Kite) return; // a slow giant cannot kite
+            if (!c.Ready(AbilityId.TitanForm) || !Titan.HasRoom(w, u.Pos)) return;
+            bool bossFight = c.Boss != null && boss != null && boss.Active;
+            int n8 = c.EnemiesWithin(u.Pos, 8f);
+            float score = -1f;
+            string why = null;
+            if (c.Tier <= 1)
+            {
+                if (c.EnemiesWithin(u.Pos, 6f) >= 1)
+                {
+                    score = 71f; // raw instinct: grows at first contact
+                    why = "first contact";
+                }
+            }
+            else if (c.Tier == 2)
+            {
+                if (n8 >= 3 || (bossFight && Vec2.Distance(c.Boss.Pos, u.Pos) < 8f + c.Boss.Radius))
+                {
+                    score = 73f;
+                    why = "big fight";
+                }
+            }
+            else
+            {
+                bool healerHunted = HealerHunted(c);
+                float squadHp = SquadHp(c);
+                if (n8 >= 3)
+                {
+                    score = 72f + 3f * Math.Min(n8 - 3, 4);
+                    why = $"pressure {n8}";
+                }
+                if (healerHunted && score < 78f)
+                {
+                    score = 78f;
+                    why = "wall off the Mender";
+                }
+                if (squadHp < 0.55f && score < 76f)
+                {
+                    score = 76f;
+                    why = "the kin are hurting";
+                }
+                if (c.Tier >= 4 && bossFight && !(boss.Phase == 2 && n8 >= 4)) score = -1f; // save it for the tells
+                if (c.Tier >= 4 && !bossFight && n8 < 4 && squadHp >= 0.5f && !HasEnemy(c, UnitKind.Rockback)) score = -1f;
+                if (bossFight && boss.Burrowed && !healerHunted) score = -1f;
+                if (bossFight && TitanReads(c) && BraceForCharge(c))
+                {
+                    score = 90f;
+                    why = "brace for the charge";
+                }
+                if (bossFight && TitanShelterReads(c) && ShelterSoon(c) && score < 88f)
+                {
+                    score = 88f;
+                    why = "shelter the kin";
+                }
+                if (c.Tier >= 5 && bossFight && boss.ClashReady(w) && boss.NextChargeIn > 0.5f && boss.NextChargeIn <= 2.5f && score < 84f)
+                {
+                    score = 84f;
+                    why = "before the charge";
+                }
+                if (c.Tier >= 5 && bossFight && OtherTitanNear(c, 15f)) score = -1f; // stagger the raid's giants
+            }
+            if (score > 0f)
+                c.Offer(score, new Intent { Kind = IntentKind.Ability, Ability = AbilityId.TitanForm, Point = c.EnemyCenter }, c.Debug ? "Titan Form: " + why : null);
+        }
+
+        /// <summary>A charge is coming down a lane with kin in it, and this tank could grow and get in front in time.</summary>
+        private static bool BraceForCharge(BrainContext c)
+        {
+            var w = c.W;
+            if (w.Boss == null || !w.Boss.ClashReady(w)) return false;
+            float grownR = c.U.Def.Radius * Balance.TitanScale;
+            foreach (var t in w.Telegraphs)
+            {
+                if (t.Removed || !t.Catchable || t.Remaining < 0.75f) continue;
+                if (!TitanHoldPoint(c, t, grownR, out Vec2 hold)) continue;
+                if (Vec2.Distance(c.U.Pos, hold) <= TitanReach(c)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Where a Titan stands to stop a charge: in the lane, past the boss's nose and in front of the
+        /// farthest squadmate it would hit, and short of any rampart across the lane, so a crash into
+        /// the rampart still happens (and the Titan never stands inside a wall).
+        /// </summary>
+        private static bool TitanHoldPoint(BrainContext c, Telegraph t, float radius, out Vec2 hold)
+        {
+            var u = c.U;
+            var w = c.W;
+            hold = u.Pos;
+            float victimAlong = -1f;
+            foreach (var m in c.Sq.Members)
+            {
+                if (m == u || !m.IsActive || !t.Contains(m.Pos, m.Radius)) continue;
+                float al = Vec2.Dot(m.Pos - t.Pos, t.Dir);
+                if (al > victimAlong) victimAlong = al;
+            }
+            if (victimAlong < 0f) return false;
+            var owner = w.FindUnit(t.OwnerId);
+            float bossR = owner != null ? owner.Radius : 2.4f;
+            float minAlong = bossR + radius + 0.5f;
+            float maxAlong = victimAlong - 0.5f;
+            float wallAlong = Titan.FirstBlockAlong(w, t.Pos, t.Dir, t.Length, bossR * 0.7f, false, out _);
+            if (wallAlong >= 0f) maxAlong = Math.Min(maxAlong, wallAlong - radius - 1f);
+            if (maxAlong < minAlong) return false;
+            float along = KMath.Clamp(Vec2.Dot(u.Pos - t.Pos, t.Dir), minAlong, maxAlong);
+            hold = w.Nav.NearestWalkable(t.Pos + t.Dir * along, 2);
+            return w.Nav.LineWalkable(u.Pos, hold, radius, true);
+        }
+
+        /// <summary>
+        /// While grown, instead of dodging: hold the charge lane in front of the kin (reading the tell),
+        /// stand firm when already in it (instinct, any tier), or plant the shield between the boss and
+        /// the stacked squad for a fire wave. Returns true if it offered one of those.
+        /// </summary>
+        private static bool TitanHolds(BrainContext c, Telegraph t)
+        {
+            var u = c.U;
+            var w = c.W;
+            var boss = w.Boss;
+            if (t.Catchable)
+            {
+                if (boss == null || u.TitanClashed || u.TitanTime <= 0.3f || !boss.ClashReady(w)) return false;
+                if (TitanReads(c) && TitanHoldPoint(c, t, u.Radius, out Vec2 hold))
+                {
+                    float d = Vec2.Distance(u.Pos, hold);
+                    if (d <= TitanReach(c) && d / Math.Max(0.5f, UnitMotor.BaseSpeed(u)) < t.Remaining - 0.2f)
+                    {
+                        u.TitanBraceUntil = w.Time + BraceHold;
+                        c.Offer(97f, BrainContext.MoveTo(hold), c.Debug ? "Hold the line" : null);
+                        return true;
+                    }
+                }
+                var owner = w.FindUnit(t.OwnerId);
+                float bossR = owner != null ? owner.Radius : 2.4f;
+                Vec2 rel = u.Pos - t.Pos;
+                float along = Vec2.Dot(rel, t.Dir);
+                float lat = MathF.Abs(Vec2.Dot(rel, t.Dir.Right));
+                // A rampart further down the lane gives a longer stagger than a clash: step aside and let
+                // Rustmaw crash into it, unless it is close enough behind the giant to make an anvil.
+                float wallAlong = Titan.FirstBlockAlong(w, t.Pos, t.Dir, t.Length, bossR * 0.7f, true, out _);
+                bool spoilsCrash = wallAlong > along && wallAlong - along > u.Radius + 3f;
+                if (!spoilsCrash && lat <= 2.5f && along >= bossR + 0.5f && along <= t.Length + u.Radius)
+                {
+                    u.TitanBraceUntil = w.Time + BraceHold;
+                    c.Offer(97f, BrainContext.MoveTo(u.Pos), c.Debug ? "Stand firm" : null);
+                    return true;
+                }
+                return false;
+            }
+            if (t.CoverBlocks && c.Boss != null && TitanShelterReads(c))
+            {
+                Vec2 stack = ShelterStack(c);
+                if (!w.Nav.SightClear(t.Pos, stack)) return false; // a wall already covers the stack
+                Vec2 toBoss = (t.Pos - stack).Normalized;
+                if (toBoss == Vec2.Zero) toBoss = c.Fwd;
+                Vec2 p = w.Nav.NearestWalkable(stack + toBoss * (u.Radius + 1.6f), 3);
+                if (!w.Nav.LineWalkable(u.Pos, p, u.Radius, true)) p = u.Pos;
+                c.Offer(97f, BrainContext.MoveTo(p), c.Debug ? "Plant the shield" : null);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>A brace lasts a little longer than one think, so it holds until the AI next decides.</summary>
+        private const float BraceHold = 0.5f;
+
+        private static Vec2 ShelterStack(BrainContext c) => c.Cmd == CommandType.Stack ? c.Anchor : c.Center;
+
+        /// <summary>A fire wave is about to go off and no wall shields where the squad stands.</summary>
+        private static bool ShelterSoon(BrainContext c)
+        {
+            var boss = c.W.Boss;
+            if (boss == null || !boss.Overheated || !(boss.BlastPending || boss.NextBlastIn < 2f)) return false;
+            return c.W.Nav.SightClear(c.Boss.Pos, ShelterStack(c));
+        }
+
+        private static bool HealerHunted(BrainContext c)
+        {
+            if (c.Healer == null || Vec2.Distance(c.Healer.Pos, c.U.Pos) > 9f) return false;
+            foreach (var e in c.Enemies)
+            {
+                if (e.CurrentTargetId == c.Healer.Id && Vec2.Distance(e.Pos, c.Healer.Pos) < 5f) return true;
+            }
+            return false;
+        }
+
+        private static float SquadHp(BrainContext c)
+        {
+            float s = 0f;
+            int n = 0;
+            foreach (var m in c.Sq.Members)
+            {
+                if (!m.IsActive) continue;
+                s += m.HpFraction;
+                n++;
+            }
+            return n > 0 ? s / n : 1f;
+        }
+
+        private static bool HasEnemy(BrainContext c, UnitKind k)
+        {
+            foreach (var e in c.Enemies)
+            {
+                if (e.Kind == k) return true;
+            }
+            return false;
+        }
+
+        private static bool OtherTitanNear(BrainContext c, float r)
+        {
+            foreach (var o in c.W.Units)
+            {
+                if (o != c.U && o.IsPlayer && o.TitanTime > 0f && Vec2.Distance(o.Pos, c.U.Pos) < r) return true;
+            }
+            return false;
         }
 
         // =====================================================================================

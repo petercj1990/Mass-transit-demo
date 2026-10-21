@@ -54,6 +54,8 @@ namespace Kinforge.Sim
         private int _telegraphId;
         private Vec2 _surfaceAt;
         private readonly List<Unit> _scratch = new List<Unit>(16);
+        private readonly Dictionary<int, int> _shelteredBy = new Dictionary<int, int>();
+        private float _clashImmuneUntil = -999f;
 
         public bool Active => Phase >= 1 && Phase <= 3 && !Defeated;
         public bool VentsExposed => _ventsTime > 0f;
@@ -64,6 +66,8 @@ namespace Kinforge.Sim
         public float NextBlastIn => Phase == 3 && _state != State.BlastWindup ? Math.Max(0f, _blastCd) : 0f;
         public float NextChargeIn => (Phase == 1 || Phase == 2) && _state == State.Chase ? Math.Max(0f, _chargeCd) : 0f;
         public bool Burrowed => _state == State.Burrowed || _state == State.Burrowing;
+        /// <summary>Can a grown Titan stop the next charge? (Once per 20 s, phases 1-2.)</summary>
+        public bool ClashReady(World w) => (Phase == 1 || Phase == 2) && w.Time >= _clashImmuneUntil;
         public float PhaseTime => _phaseTime;
         public string StateName => _state.ToString();
 
@@ -137,6 +141,23 @@ namespace Kinforge.Sim
                 if (_state == State.Burrowed || _state == State.Burrowing || _state == State.Surfacing) Body.Pos = Center;
                 StartPhase3(w);
             }
+        }
+
+        /// <summary>Test helper: charge straight away along <paramref name="dir"/>, skipping the tell.</summary>
+        public void DebugChargeAt(World w, Vec2 dir, float length)
+        {
+            if (Phase != 1 && Phase != 2) return;
+            _chargeDir = dir.Normalized;
+            _chargeLeft = length;
+            _chargeHit.Clear();
+            Body.Facing = _chargeDir.ToAngle();
+            _state = State.Charging;
+        }
+
+        /// <summary>Test helper: release a fire wave now (phase 3).</summary>
+        public void DebugBlastNow(World w)
+        {
+            if (Phase == 3) Blast(w);
         }
 
         public void OpenGate(World w)
@@ -279,6 +300,7 @@ namespace Kinforge.Sim
             Body.Intent = default;
             Body.Action = UnitAction.None;
             _ventsTime = 0f;
+            _clashImmuneUntil = -999f;
             Group.State = GroupState.Idle;
             foreach (var m in Group.Members)
             {
@@ -398,7 +420,7 @@ namespace Kinforge.Sim
             var t = w.AddTelegraph(new Telegraph
             {
                 Shape = TelegraphShape.Line, Pos = Body.Pos, Dir = _chargeDir, Length = _chargeLeft, Width = 4.6f,
-                Duration = 1.7f, Threatens = Faction.Player, OwnerId = Body.Id, Label = "Line Charge",
+                Duration = 1.7f, Threatens = Faction.Player, OwnerId = Body.Id, Label = "Line Charge", Catchable = true,
             });
             _telegraphId = t.Id;
         }
@@ -445,11 +467,60 @@ namespace Kinforge.Sim
                     else EndCharge();
                     return;
                 }
+                if (w.Time >= _clashImmuneUntil)
+                {
+                    var giant = Titan.ChargeBlocker(w, Body, next, _chargeDir);
+                    if (giant != null)
+                    {
+                        Clash(w, giant, nose);
+                        return;
+                    }
+                }
                 Body.Pos = next;
                 HitInPath(w);
             }
             _chargeLeft -= move;
             if (_chargeLeft <= 0.01f) EndCharge();
+        }
+
+        /// <summary>
+        /// A grown Shieldbearer meets the charge head-on: the charge stops dead and Rustmaw reels.
+        /// With a friendly rampart right behind the Titan (hammer and anvil) it counts as a full
+        /// rampart crash, so the Warwright's answer stays the strongest.
+        /// </summary>
+        private void Clash(World w, Unit giant, Vec2 at)
+        {
+            AbilitySystem.RemoveTelegraph(w, _telegraphId);
+            Titan.FirstBlockAlong(w, giant.Pos, _chargeDir, giant.Radius + 3f, Body.Radius * 0.7f, true, out var anvil);
+
+            float stagger = anvil != null ? 4f : Balance.TitanClashStagger;
+            _state = State.Stagger;
+            _stateTimer = stagger;
+            _ventsTime = anvil != null ? 4f : Balance.TitanClashVents;
+            Body.Status.StunTime = stagger;
+            _clashImmuneUntil = w.Time + Balance.TitanClashImmunity;
+            if (anvil != null)
+            {
+                Combat.DestroyStructure(w, anvil);
+                var builder = w.FindUnitAny(anvil.OwnerUnitId);
+                if (builder?.Fight != null) builder.Fight.StructureAbsorbed += 300f;
+            }
+
+            giant.TitanClashed = true;
+            _chargeHit.Add(giant.Id);
+            if (giant.Fight != null)
+            {
+                giant.Fight.TitanClashes++;
+                giant.Fight.Interrupts++;
+            }
+            Combat.Deal(w, Body, giant, 115f * DamageDealtMultiplier, DamageType.Kinetic, HitFlags.Melee | HitFlags.Ability);
+            Combat.Knockback(w, giant, _chargeDir, 3.5f);
+            if (giant.IsActive) Combat.Taunt(w, Body, giant, 3f); // the two beasts lock horns
+            w.Emit(SimEventType.TitanClash, giant.Id, Body.Id, at, anvil != null ? 1f : 0f);
+            if (anvil != null)
+                w.Alert($"Rustmaw is crushed between {giant.Name} and the rampart! It is staggered: hit the vents!", Body.Pos, 3);
+            else
+                w.Alert($"{giant.Name} met Rustmaw's charge head-on! It reels: hit the vents!", Body.Pos, 3);
         }
 
         private void HitInPath(World w)
@@ -595,12 +666,22 @@ namespace Kinforge.Sim
             _state = State.Chase;
             _blastCd = 8.5f;
             float dmg = 130f * DamageDealtMultiplier;
+            Titan.ComputeShelter(w, Body.Pos, _shelteredBy, _scratch);
             foreach (var u in w.Units.ToArray())
             {
                 if (!u.IsPlayer || !u.IsTargetable) continue;
                 if (Vec2.Distance(u.Pos, Body.Pos) > 16f + u.Radius) continue;
                 if (!w.Nav.SightClear(Body.Pos, u.Pos)) continue; // behind a wall
-                Combat.Deal(w, Body, u, dmg, DamageType.Thermal, HitFlags.Ability);
+                float mul = 1f;
+                if (_shelteredBy.TryGetValue(u.Id, out int titanId))
+                {
+                    // In a Titan's shadow: most of the wave breaks on the giant.
+                    mul = Balance.TitanShelterMul;
+                    var titan = w.FindUnitAny(titanId);
+                    if (titan?.Fight != null) titan.Fight.TitanSheltered++;
+                    w.Emit(SimEventType.TitanShelter, titanId, u.Id, u.Pos);
+                }
+                Combat.Deal(w, Body, u, dmg * mul, DamageType.Thermal, HitFlags.Ability);
             }
             foreach (var s in w.Structures.ToArray())
             {
@@ -627,6 +708,16 @@ namespace Kinforge.Sim
             }
             ReturnRaidCores(w);
             w.Emit(SimEventType.Victory, Body.Id, 0, Body.Pos);
+            Unit standing = null;
+            foreach (var u in w.Units)
+            {
+                if (u.IsPlayer && u.IsActive && u.TitanTime > 0f && w.InArena(u.Pos, 4f))
+                {
+                    standing = u;
+                    break;
+                }
+            }
+            if (standing != null) w.Alert($"{standing.Name} stands titan-tall over Rustmaw's carcass!", Body.Pos, 3);
             w.Alert("RUSTMAW IS DEAD! Its relic is yours: the Forge, Core Lathe and War Shrine can now be built (next milestone). Biome 1 cleared.", Body.Pos, 3);
         }
     }

@@ -39,6 +39,8 @@ namespace Kinforge.Sim
                 Blurb = "Interrupts a cast; short stun." });
             Add(new AbilityDef { Id = AbilityId.ShockwaveSlam, Name = "Shockwave Slam", Cooldown = 12f, CastTime = 0.45f, Range = 5f, Target = AbilityTarget.Self, Type = DamageType.Kinetic, Multi = true, Power = 26f, ArcDeg = 75f, Radius = 5f,
                 Blurb = "Cone knockback; threat on everything hit." });
+            Add(new AbilityDef { Id = AbilityId.TitanForm, Name = "Titan Form", Cooldown = 55f, CastTime = 0.6f, Target = AbilityTarget.Self, Multi = true, Radius = 8f, Duration = 15f,
+                Blurb = "Grows to titan size for 15 s: a living wall that stops charges and shelters kin from fire." });
 
             // --- Mender ---
             Add(new AbilityDef { Id = AbilityId.MendBeam, Name = "Mend Beam", Cooldown = 0.6f, CastTime = 0.1f, ChannelTime = 2f, Range = 14f, Target = AbilityTarget.Ally, Power = 30f,
