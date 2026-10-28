@@ -72,8 +72,14 @@ namespace Kinforge.Game
             _accumulator = 0f;
             FrameEvents.Clear();
             var first = World.Squads.Count > 0 ? World.Squads[0] : null;
-            if (first != null) Selection.SelectOnly(first.Id);
-            Rig.FocusOn(ToUnity.Ground(World, World.BasePos + new Vec2(0f, 14f)), true);
+            if (first != null)
+            {
+                // Start behind the kin-band, looking the way it faces.
+                Selection.SelectOnly(first.Id);
+                Rig.FocusOn(ToUnity.Ground(World, first.Anchor), true);
+                Rig.LookAlong(Mathf.Atan2(first.Forward.X, first.Forward.Z) * Mathf.Rad2Deg, true);
+            }
+            else Rig.FocusOn(ToUnity.Ground(World, World.BasePos), true);
         }
 
         public void CycleSpeed()
@@ -133,8 +139,8 @@ namespace Kinforge.Game
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = Palette.Sky;
             cam.nearClipPlane = 0.3f;
-            cam.farClipPlane = 1000f;
-            cam.fieldOfView = 50f;
+            cam.farClipPlane = 400f;
+            cam.fieldOfView = 55f;
             return cam;
         }
 
@@ -166,8 +172,9 @@ namespace Kinforge.Game
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = Palette.Sky;
-            RenderSettings.fogStartDistance = 160f;
-            RenderSettings.fogEndDistance = 420f;
+            // Close-in haze for the third-person view: the world opens up as you walk, not from above.
+            RenderSettings.fogStartDistance = 55f;
+            RenderSettings.fogEndDistance = 170f;
         }
     }
 

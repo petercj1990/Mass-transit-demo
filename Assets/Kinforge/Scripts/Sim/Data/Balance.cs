@@ -20,7 +20,36 @@ namespace Kinforge.Sim
         public const float TurretSight = 12f;
         public const float BaseRadius = 16f;        // inside this: deposit, bank Doctrine XP, rest bonus
         public const int StartingSquads = 1;
-        public const int MaxWarHallLevel = 3;       // squad cap equals War Hall level (design: up to 8 later)
+        public const int MaxWarHallLevel = 3;       // one kin-band; each War Hall level drills it stronger
+        public const float HallHealthPerLevel = 0.12f;   // max health per War Hall level above 1
+        public const float HallResourcePerLevel = 0.25f; // max mana and stamina per War Hall level above 1
+
+        // --- Direct control (WASD / gamepad steering) ----------------------------------------------
+        public const float SteerTimeout = 0.3f;     // steering input older than this is treated as released
+        public const float SteerLeash = 5f;         // the banner slows when it gets this far ahead of the squad
+
+        // --- Mana and stamina ----------------------------------------------------------------------
+        // Regeneration as a fraction of the maximum per second.
+        public const float ManaRegenCombat = 0.025f;
+        public const float ManaRegenOutOfCombat = 0.05f;
+        public const float ManaRegenResting = 0.12f;
+        public const float ManaRegenGarrison = 0.3f;
+        public const float StaminaRegenCombat = 0.08f;
+        public const float StaminaRegenOutOfCombat = 0.2f;
+        public const float StaminaRegenResting = 0.3f;
+        public const float StaminaRegenDelay = 1f;      // seconds after exertion before stamina comes back in a fight
+        public const float ExhaustedFraction = 0.12f;   // below this much stamina a Vhorn is exhausted
+        public const float ExhaustedSpeedMul = 0.8f;
+        public const float ExhaustedAttackMul = 1.3f;   // attack cooldown
+        public const float DodgeStamina = 12f;
+        public const float ReservePenalty = 60f;        // utility lost per unit of reserve an ability would dig into
+
+        // --- Wounds: damage that only resting at base heals --------------------------------------
+        public const float WoundFraction = 0.1f;        // share of damage taken that becomes lasting wounds
+        public const float MaxWound = 0.75f;            // wounds never take more than this share of max health
+        public const float DownWound = 0.15f;           // extra wounds for being downed
+        public const float WoundHealGarrison = 0.08f;   // wound fraction healed per second while garrisoned
+        public const float WoundHealAtBase = 0.03f;     // ...while resting or idle inside the base
 
         // --- Injury, death and rebirth -----------------------------------------------------------
         public const float InjuredMaxHpMul = 0.8f;  // design doc starting value: 20% less
@@ -34,6 +63,8 @@ namespace Kinforge.Sim
         public const float OutOfCombatRegen = 0.006f;
         public const bool DeathLosesUnbankedDoctrine = true; // design doc "proposed extra cost"
         public const float RegrowSeconds = 20f;
+        public const float StarvedRegrowMul = 2f;      // regrowth the stockpile can't pay for still happens, this much slower
+        public const float WipeRecallSeconds = 6f;     // with nobody left standing, the clan carries the kin-cores home
 
         // --- Combat ------------------------------------------------------------------------------
         public const float ArmorConstant = 100f;       // kinetic damage * 100 / (100 + armor)
@@ -88,6 +119,15 @@ namespace Kinforge.Sim
         public const float TitanRoom = 1.4f;           // clear ground needed around the tank to grow
         public const float TitanFizzleCooldown = 3f;
         public const float TitanCastCooldown = 1f;     // cooldown while casting; the full cooldown starts when it grows
+
+        // --- Rustmaw, tuned for one kin-band ------------------------------------------------------
+        public const float RustmawHp = 8500f;
+        public const float RustmawSwipe = 60f;
+        public const float RustmawChargeHit = 80f;
+        public const float RustmawEruption = 55f;
+        public const float RustmawBlast = 90f;
+        public const int RustmawHoundsPerWave = 2;
+        public const float RustmawEnrageAfter = 100f;    // seconds into a phase before its damage ramps
 
         // --- Engineers ---------------------------------------------------------------------------
         public const int MaxTurretsPerSquad = 2;

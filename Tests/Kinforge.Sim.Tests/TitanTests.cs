@@ -127,7 +127,8 @@ namespace Kinforge.Sim.Tests
             Assert.Equal(0f, tank.TitanTime);
             Assert.Equal(tank.Def.Radius, tank.Radius);
             Combat.Revive(w, tank, Balance.StabilizeHpFraction, mender);
-            Assert.Equal(tank.MaxHp * Balance.StabilizeHpFraction, tank.Hp, 2);
+            // Revived at normal size; wounds from the huge hit cap how far it comes back.
+            Assert.Equal(System.Math.Min(tank.MaxHp * Balance.StabilizeHpFraction, tank.HealCap), tank.Hp, 2);
             Assert.Null(Titan.CheckInvariants(w));
 
             GrowFully(w, tank);
@@ -302,7 +303,7 @@ namespace Kinforge.Sim.Tests
 
             w.Boss.DebugBlastNow(w);
 
-            float full = 130f * w.Boss.DamageDealtMultiplier;
+            float full = Balance.RustmawBlast * w.Boss.DamageDealtMultiplier;
             for (int i = 0; i < kin.Count; i++)
             {
                 float taken = before[kin[i].Id] - kin[i].Hp;

@@ -22,7 +22,7 @@ namespace Kinforge.Game
 
         public Texture2D Albedo { get; }
         public Color32[] MinimapPixels { get; private set; }
-        public const int MinimapSize = 128;
+        public const int MinimapSize = 256;
 
         public TerrainView(World w, Transform parent)
         {
@@ -44,9 +44,9 @@ namespace Kinforge.Game
             _fogTarget = new float[n];
             for (int i = 0; i < n; i++)
             {
-                _fogAlpha[i] = 0.9f;
-                _fogTarget[i] = 0.9f;
-                _fogColors[i] = new Color32(8, 9, 12, 230);
+                _fogAlpha[i] = 1f;
+                _fogTarget[i] = 1f;
+                _fogColors[i] = new Color32(6, 7, 9, 255);
             }
             _fogMesh.colors32 = _fogColors;
             var fogGo = Prim.Mesh(_fogMesh, parent, Vector3.zero, Vector3.one, Mats.NewTransparent(Color.white), default, false);
@@ -157,7 +157,7 @@ namespace Kinforge.Game
                         int cx = Mathf.Clamp((int)(x / Visibility.CellSize) + dx, 0, cells - 1);
                         int cz = Mathf.Clamp((int)(z / Visibility.CellSize) + dz, 0, cells - 1);
                         byte s = _w.RevealMap ? (byte)2 : fog.State[cz * cells + cx];
-                        sum += s == 2 ? 0f : (s == 1 ? 0.48f : 0.9f);
+                        sum += s == 2 ? 0f : (s == 1 ? 0.5f : 1f);
                     }
                     _fogTarget[z * n + x] = sum * 0.25f;
                 }

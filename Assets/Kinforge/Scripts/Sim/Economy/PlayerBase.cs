@@ -12,8 +12,9 @@ namespace Kinforge.Sim
     }
 
     /// <summary>
-    /// The clan base: Kin Cradle (recruits and rebirth), War Hall (squad cap), Smelter and Salvage
-    /// Bench (which only run with a squad garrisoned, per the design doc's tension).
+    /// The clan base: Kin Cradle (rebirth), War Hall (drills that make the kin-band stronger), Smelter
+    /// and Salvage Bench (which only run while the kin-band is garrisoned, so resting at home to heal
+    /// wounds is also when the workshops turn loot into power).
     /// </summary>
     public sealed class PlayerBase
     {
@@ -31,7 +32,6 @@ namespace Kinforge.Sim
         public static readonly Cost WeaponsCost = Cost.Of(ResourceKind.Alloy, 30, ResourceKind.Hide, 16);
         public static readonly Cost ArmorCost = Cost.Of(ResourceKind.Alloy, 35, ResourceKind.Hide, 20, ResourceKind.Fiber, 15);
         public static readonly Cost SigilCost = Cost.Of(ResourceKind.Alloy, 30, ResourceKind.Hide, 30, ResourceKind.Stone, 50);
-        public static readonly Cost RecallCost = Cost.Of(ResourceKind.Scrap, 20);
 
         public const float RecruitSeconds = 30f;
         public const float WeaponsSeconds = 15f;
@@ -43,6 +43,8 @@ namespace Kinforge.Sim
         public readonly List<int> CradleQueue = new List<int>();
         public int Regrowing;
         public float RegrowTimer;
+        public bool RegrowStarved;
+        public float WipeRecallTimer;
         public bool Recruiting;
         public float RecruitTimer;
         public BenchJob Bench;
@@ -57,7 +59,8 @@ namespace Kinforge.Sim
         public string BenchStatus = "Idle";
         public string SmelterStatus = "Idle";
 
-        public int SquadCap => WarHallLevel;
+        /// <summary>This slice plays one kin-band; the War Hall makes it stronger instead of bigger.</summary>
+        public int SquadCap => 1;
 
         public bool HasGarrison(World w)
         {
@@ -88,6 +91,20 @@ namespace Kinforge.Sim
             w.Alert($"{u.Name}'s kin-core is home. The Kin Cradle will regrow them.", Pos, 0);
         }
 
+        /// <summary>Raises every member's War Hall level, keeping their health, mana and stamina fractions.</summary>
+        public static void ApplyHallLevel(Squad sq, int level)
+        {
+            sq.HallLevel = level;
+            foreach (var m in sq.Members)
+            {
+                float hp = m.HpFraction, mana = m.ManaFraction, stamina = m.StaminaFraction;
+                m.HallLevel = level;
+                if (m.Life == LifeState.Active) m.Hp = m.MaxHp * hp;
+                m.Mana = m.MaxMana * mana;
+                m.Stamina = m.MaxStamina * stamina;
+            }
+        }
+
         public Cost RegrowCostFor(Unit u) => u.ArmorTier >= 2 ? RegrowCostTier2 : RegrowCost;
 
         public void HandleOrder(World w, PlayerOrder o)
@@ -98,6 +115,11 @@ namespace Kinforge.Sim
                     if (Recruiting)
                     {
                         w.Alert("The Kin Cradle is already growing recruits.", 1);
+                        return;
+                    }
+                    if (w.Squads.Count >= SquadCap)
+                    {
+                        w.Alert("You lead a single kin-band. Upgrade the War Hall to make it stronger.", 1);
                         return;
                     }
                     if (w.Squads.Count >= SquadCap)
@@ -129,7 +151,8 @@ namespace Kinforge.Sim
                         return;
                     }
                     WarHallLevel++;
-                    w.Alert($"War Hall upgraded: squad cap is now {SquadCap}.", Pos, 3);
+                    foreach (var sq in w.Squads) ApplyHallLevel(sq, WarHallLevel);
+                    w.Alert($"War Hall level {WarHallLevel}: the kin-band drills harder (+{Balance.HallHealthPerLevel:P0} health, +{Balance.HallResourcePerLevel:P0} mana and stamina).", Pos, 3);
                     return;
                 }
 
@@ -174,22 +197,43 @@ namespace Kinforge.Sim
                     }
                     if (anyActive)
                     {
-                        w.Alert("Kin-cores can only be recalled when no Vhorn is left standing. Send a squad to recover the cache.", 1);
+                        w.Alert("Kin-cores can only be recalled when no Vhorn is left standing. Send the kin-band to recover the cache.", 1);
                         return;
                     }
-                    if (!w.Stock.TrySpend(RecallCost))
-                    {
-                        w.Alert("Not enough scrap to recall the kin-cores: " + RecallCost, 1);
-                        return;
-                    }
-                    foreach (var c in w.Caches)
-                    {
-                        foreach (int id in c.UnitIds) ReceiveCore(w, id);
-                        c.Removed = true;
-                    }
+                    RecallAll(w);
                     return;
                 }
             }
+        }
+
+        private void RecallAll(World w)
+        {
+            foreach (var c in w.Caches)
+            {
+                if (c.Removed) continue;
+                foreach (int id in c.UnitIds) ReceiveCore(w, id);
+                c.Removed = true;
+            }
+            WipeRecallTimer = 0f;
+        }
+
+        private static bool AnyoneStanding(World w)
+        {
+            foreach (var s in w.Squads)
+            foreach (var m in s.Members)
+            {
+                if (m.Life == LifeState.Active) return true;
+            }
+            return false;
+        }
+
+        private static bool AnyCache(World w)
+        {
+            foreach (var c in w.Caches)
+            {
+                if (!c.Removed) return true;
+            }
+            return false;
         }
 
         public void Update(World w)
@@ -198,7 +242,20 @@ namespace Kinforge.Sim
             int garrisons = GarrisonCount(w);
             bool raid = w.Boss != null && w.Boss.Active;
 
-            // Kin Cradle: rebirth first, then recruits.
+            // One kin-band, so nobody can fetch a wiped band's cores: the clan carries them home itself.
+            if (!raid && AnyCache(w) && !AnyoneStanding(w))
+            {
+                WipeRecallTimer += dt;
+                if (WipeRecallTimer >= Balance.WipeRecallSeconds)
+                {
+                    RecallAll(w);
+                    w.Alert("The clan has carried the fallen kin-cores home to the Kin Cradle.", Pos, 2);
+                }
+            }
+            else WipeRecallTimer = 0f;
+
+            // Kin Cradle: rebirth first, then recruits. Rebirth the stockpile can't pay for still happens, slowly,
+            // so a wiped kin-band is never stuck.
             if (Regrowing == 0 && CradleQueue.Count > 0)
             {
                 var u = w.FindUnitAny(CradleQueue[0]);
@@ -206,13 +263,13 @@ namespace Kinforge.Sim
                 {
                     CradleQueue.RemoveAt(0);
                 }
-                else if (w.Stock.TrySpend(RegrowCostFor(u)))
+                else
                 {
+                    RegrowStarved = !w.Stock.TrySpend(RegrowCostFor(u));
                     Regrowing = u.Id;
-                    RegrowTimer = Balance.RegrowSeconds;
+                    RegrowTimer = Balance.RegrowSeconds * (RegrowStarved ? Balance.StarvedRegrowMul : 1f);
                     CradleQueue.RemoveAt(0);
                 }
-                else CradleStatus = $"Waiting for {RegrowCostFor(u)} to regrow {u.Name}";
             }
             if (Regrowing != 0)
             {
@@ -221,7 +278,9 @@ namespace Kinforge.Sim
                 else
                 {
                     RegrowTimer -= dt;
-                    CradleStatus = $"Regrowing {u?.Name} ({RegrowTimer:0}s)";
+                    CradleStatus = RegrowStarved
+                        ? $"Regrowing {u?.Name} slowly, no materials ({RegrowTimer:0}s)"
+                        : $"Regrowing {u?.Name} ({RegrowTimer:0}s)";
                     if (RegrowTimer <= 0f)
                     {
                         Regrowing = 0;

@@ -5,8 +5,8 @@ using Kinforge.Sim;
 
 /// <summary>
 /// A scripted "player" that runs the intended MVP progression on a real generated world, to check
-/// the game is completable and to measure pacing: gather, hunt hide, garrison to smelt, upgrade the
-/// War Hall, recruit, craft gear and the Sigil, then raid Rustmaw with phase-appropriate commands.
+/// the game is completable and to measure pacing: gather, hunt hide, go home to close wounds and smelt,
+/// drill the kin-band in the War Hall, craft gear and the Sigil, then raid Rustmaw with phase-appropriate commands.
 /// </summary>
 static class Campaign
 {
@@ -17,6 +17,8 @@ static class Campaign
         public Cost Cost;
         public Action<World> Buy;
     }
+
+    static readonly float TraceFrom = float.TryParse(Environment.GetEnvironmentVariable("KF_TRACE_FROM"), out float f) ? f : 0f;
 
     public static void Run(int seed, int maxMinutes, bool verbose)
     {
@@ -30,17 +32,14 @@ static class Campaign
             if (verbose) Console.WriteLine(line);
         }
 
-        Squad A() => w.Squads[0];
-        Squad B() => w.Squads.Count > 1 ? w.Squads[1] : null;
+        Squad Band() => w.Squads[0];
 
         var steps = new List<Step>
         {
             new Step { Name = "War Hall 2", Done = x => x.Base.WarHallLevel >= 2, Cost = PlayerBase.WarHallCost[1], Buy = x => x.Issue(new PlayerOrder { Type = OrderType.UpgradeWarHall }) },
-            new Step { Name = "Recruit", Done = x => x.Squads.Count >= 2 || x.Base.Recruiting, Cost = PlayerBase.RecruitCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.Recruit }) },
-            new Step { Name = "Arms A", Done = x => x.Squads[0].WeaponTier >= 2 || (x.Base.Bench == BenchJob.Weapons && x.Base.BenchSquadId == x.Squads[0].Id), Cost = PlayerBase.WeaponsCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.CraftWeapons, TargetId = x.Squads[0].Id }) },
-            new Step { Name = "Plate A", Done = x => x.Squads[0].ArmorTier >= 2 || (x.Base.Bench == BenchJob.Armor && x.Base.BenchSquadId == x.Squads[0].Id), Cost = PlayerBase.ArmorCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.CraftArmor, TargetId = x.Squads[0].Id }) },
-            new Step { Name = "Arms B", Done = x => x.Squads.Count > 1 && (x.Squads[1].WeaponTier >= 2 || (x.Base.Bench == BenchJob.Weapons && x.Base.BenchSquadId == x.Squads[1].Id)), Cost = PlayerBase.WeaponsCost, Buy = x => { if (x.Squads.Count > 1) x.Issue(new PlayerOrder { Type = OrderType.CraftWeapons, TargetId = x.Squads[1].Id }); } },
-            new Step { Name = "Plate B", Done = x => x.Squads.Count > 1 && (x.Squads[1].ArmorTier >= 2 || (x.Base.Bench == BenchJob.Armor && x.Base.BenchSquadId == x.Squads[1].Id)), Cost = PlayerBase.ArmorCost, Buy = x => { if (x.Squads.Count > 1) x.Issue(new PlayerOrder { Type = OrderType.CraftArmor, TargetId = x.Squads[1].Id }); } },
+            new Step { Name = "Arms", Done = x => Band().WeaponTier >= 2 || x.Base.Bench == BenchJob.Weapons, Cost = PlayerBase.WeaponsCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.CraftWeapons, TargetId = Band().Id }) },
+            new Step { Name = "Plate", Done = x => Band().ArmorTier >= 2 || x.Base.Bench == BenchJob.Armor, Cost = PlayerBase.ArmorCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.CraftArmor, TargetId = Band().Id }) },
+            new Step { Name = "War Hall 3", Done = x => x.Base.WarHallLevel >= 3, Cost = PlayerBase.WarHallCost[2], Buy = x => x.Issue(new PlayerOrder { Type = OrderType.UpgradeWarHall }) },
             new Step { Name = "Sigil", Done = x => x.Base.SigilCrafted || x.Base.Bench == BenchJob.Sigil, Cost = PlayerBase.SigilCost, Buy = x => x.Issue(new PlayerOrder { Type = OrderType.CraftSigil }) },
         };
 
@@ -79,9 +78,9 @@ static class Campaign
             }
 
             Mile("War Hall 2", w.Base.WarHallLevel >= 2);
-            Mile("Second kin-band", w.Squads.Count >= 2);
-            Mile("First ferrite gear", w.Squads.Any(s => s.WeaponTier > 1 || s.ArmorTier > 1));
-            Mile("All gear", w.Squads.Count > 1 && w.Squads.All(s => s.WeaponTier > 1 && s.ArmorTier > 1));
+            Mile("War Hall 3", w.Base.WarHallLevel >= 3);
+            Mile("First ferrite gear", Band().WeaponTier > 1 || Band().ArmorTier > 1);
+            Mile("All gear", Band().WeaponTier > 1 && Band().ArmorTier > 1);
             Mile("Sigil", w.Base.SigilCrafted);
             Mile("Boss phase 2", w.Boss.Phase >= 2);
             Mile("Boss phase 3", w.Boss.Phase >= 3);
@@ -107,6 +106,13 @@ static class Campaign
                 }
             }
 
+            if (TraceFrom > 0 && w.Time >= TraceFrom && w.Time < TraceFrom + 60 && t % 40 == 0)
+            {
+                var s0 = Band();
+                Console.WriteLine($"T {w.Time:0} combat {s0.InCombat} engaged {s0.Engaged.Count} task {s0.Task} anchor {s0.Anchor} canchor {s0.CombatAnchor} | " +
+                    string.Join(" ", s0.Members.Select(m => $"{m.Role.ToString()[0]}{m.Pos}->{m.Intent.Kind}{(m.Intent.Kind == IntentKind.Move ? m.Intent.Point.ToString() : "")}")) + " | " +
+                    string.Join(" ", s0.Engaged.Select(e => $"{e.Kind}#{e.Id} {e.Pos} {e.Intent.Kind} {e.Intent.Point} grp {e.Group?.State} home {e.Group?.Home} leash {e.Group?.LeashRadius}")));
+            }
             if (t % 100 != 0) continue; // the "player" thinks every 5 seconds
 
             // Buy whatever the plan needs next.
@@ -115,7 +121,6 @@ static class Campaign
                 if (s.Done(w)) continue;
                 bool benchStep = s.Name.StartsWith("Arms") || s.Name.StartsWith("Plate") || s.Name == "Sigil";
                 if (benchStep && w.Base.Bench != BenchJob.None) break;
-                if (s.Name == "Recruit" && w.Base.WarHallLevel < 2) break;
                 if (w.Stock.Has(s.Cost))
                 {
                     s.Buy(w);
@@ -125,8 +130,8 @@ static class Campaign
             }
 
             var remaining = steps.Where(s => !s.Done(w)).ToList();
-            bool trained = w.Squads.Count >= 2 && w.Squads.All(s => s.Members.Average(m => m.Doctrine.Tier(CommandType.DefensiveFormation)) >= 1.8);
-            bool ready = remaining.Count == 0 && w.Base.Bench == BenchJob.None && w.Squads.Count >= 2 && trained;
+            bool trained = Band().Members.Average(m => m.Doctrine.Tier(CommandType.DefensiveFormation)) >= 2.4;
+            bool ready = remaining.Count == 0 && w.Base.Bench == BenchJob.None && trained;
 
             // What do we still need, in raw materials (alloy counts as 2 ferrite)?
             var need = new float[6];
@@ -153,27 +158,32 @@ static class Campaign
             {
                 if (sq.Wiped)
                 {
-                    var cache = w.Caches.FirstOrDefault();
-                    var other = w.Squads.FirstOrDefault(o => o != sq && !o.Wiped && o.ActiveCount > 0);
-                    if (cache != null && other != null && other.Task != SquadTask.Recover)
-                    {
-                        w.Issue(new PlayerOrder { Type = OrderType.Recover, TargetId = cache.Id, Squads = { other.Id } });
-                        Log($"{other.Name} goes to recover {sq.Name}'s cores");
-                    }
-                    if (other == null && cache != null) w.Issue(new PlayerOrder { Type = OrderType.RecallCores });
+                    // One kin-band: its cores come home through the recall (there is nobody to fetch them).
+                    if (w.Caches.Count > 0) w.Issue(new PlayerOrder { Type = OrderType.RecallCores });
                     continue;
                 }
                 if (sq.InCombat) continue;
                 if (raiding) continue;
 
-                // Garrison duty: the second squad (or the only one, when smelting is the bottleneck).
-                // Rotate garrison duty: whichever squad has the lower Doctrine stays home, so both get trained.
-                Squad homebody = w.Squads.Count > 1
-                    ? w.Squads.Where(o => !o.Wiped).OrderBy(o => o.Members.Sum(m => m.Doctrine.TierSum)).First()
-                    : null;
-                if (homebody != null && (int)(w.Time / 240f) % 2 == 1) homebody = w.Squads.Where(o => !o.Wiped && o != homebody).FirstOrDefault() ?? homebody;
-                bool isGarrisonSquad = w.Squads.Count > 1 ? sq == homebody : (canSmelt && shortfall.Sum() - shortfall[(int)ResourceKind.Ferrite] < 1f);
-                if ((canSmelt || benchWaiting) && isGarrisonSquad)
+                // Push your luck, but not too far: deep wounds only close at home.
+                float worstWound = sq.Members.Where(m => m.Life != LifeState.Dead).Select(m => m.Wound).DefaultIfEmpty(0f).Max();
+                bool wounded = worstWound > 0.35f || sq.Members.Any(m => m.Life == LifeState.Downed);
+                if (sq.Garrisoned && worstWound > 0.02f) continue;
+                if (wounded && !sq.Garrisoned)
+                {
+                    if (sq.Task != SquadTask.Garrison)
+                    {
+                        w.Issue(new PlayerOrder { Type = OrderType.Garrison, Squads = { sq.Id } });
+                        Log($"{sq.Name} heads home to close wounds (worst {worstWound:P0}), carrying {sq.CarryLoad:0}");
+                    }
+                    continue;
+                }
+
+                // Garrison duty when smelting or the bench is the bottleneck.
+                // (Only alloy missing, and ferrite on hand to smelt it.)
+                float otherShort = shortfall.Sum() - shortfall[(int)ResourceKind.Ferrite] - shortfall[(int)ResourceKind.Alloy];
+                bool garrisonDuty = benchWaiting || (canSmelt && otherShort < 1f);
+                if (garrisonDuty)
                 {
                     if (!sq.Garrisoned && sq.Task != SquadTask.Garrison)
                     {
@@ -182,7 +192,6 @@ static class Campaign
                     }
                     continue;
                 }
-                if (sq.Garrisoned && (canSmelt || benchWaiting) && w.Squads.Count == 1) continue;
                 if (sq.CoresCarried > 0 && sq.Task != SquadTask.Return)
                 {
                     w.Issue(new PlayerOrder { Type = OrderType.ReturnToBase, Squads = { sq.Id } });
@@ -198,19 +207,7 @@ static class Campaign
                 }
                 if (sq.Stance == CommandType.Rest && hurt) continue;
 
-                if (ready)
-                {
-                    continue; // handled below
-                }
-                if (sq.Garrisoned && !isGarrisonSquad && !(canSmelt || benchWaiting))
-                {
-                    // fall through: leave the garrison and get to work
-                }
-                else if (sq.Garrisoned && !isGarrisonSquad)
-                {
-                    // the other squad has taken over the workshops
-                }
-
+                if (ready) continue; // handled below
                 if (sq.Task != SquadTask.Idle && !sq.Garrisoned) continue;
 
                 // Pick the biggest raw shortfall; hide comes from hunting.
@@ -252,7 +249,7 @@ static class Campaign
             if (ready && !raiding)
             {
                 var ids = w.Squads.Select(s => s.Id).ToList();
-                bool allHealthy = w.Squads.All(s => s.Members.All(m => m.Life == LifeState.Active && !m.Injured));
+                bool allHealthy = w.Squads.All(s => s.Members.All(m => m.Life == LifeState.Active && !m.Injured && m.Wound < 0.02f && m.ManaFraction > 0.9f));
                 if (!allHealthy)
                 {
                     foreach (var sq in w.Squads)
@@ -260,7 +257,7 @@ static class Campaign
                     continue;
                 }
                 raiding = true;
-                Log("RAID: both squads head for Breach Hold");
+                Log("RAID: the kin-band heads for Breach Hold");
                 w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = CommandType.DefensiveFormation }.With(ids));
                 w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + (w.BasePos - w.ArenaCenter).Normalized * 10f }.With(ids));
             }
@@ -282,8 +279,16 @@ static class Campaign
                           string.Join(", ", Enumerable.Range(0, 6).Select(i => $"{(ResourceKind)i}={w.Stock.Amounts[i]:0}")));
         foreach (var l in log.Where(l => l.Contains("MILESTONE") || l.Contains("TITAN") || l.Contains("RAID") || l.Contains("raid failed") || l.Contains("buy"))) Console.WriteLine("  " + l);
         int deaths = w.Squads.Sum(s => s.Members.Count(m => m.Life == LifeState.Dead));
-        Console.WriteLine($"  fights {w.Reports.Count}, wipes {w.Reports.Count(r => r.Result == "Squad wiped")}, dead now {deaths}");
+        Console.WriteLine($"  fights {w.Reports.Count}, wipes {w.Reports.Count(r => r.Result == "Squad wiped")}, dead now {deaths}, trips home to heal {log.Count(l => l.Contains("close wounds"))}");
         Console.WriteLine($"  Titan Form: {titanRises} rises, {titanClashes} charge clashes, {titanShelters} sheltered hits, {titanViolations} invariant violations");
+        if (!w.Victory)
+            foreach (var s in w.Squads)
+                Console.WriteLine($"  end state: raiding {raiding}, boss phase {w.Boss.Phase} active {w.Boss.Active} gate open {w.Boss.GateOpen}, {s.Name} task {s.Task} stance {s.Stance} " +
+                                  $"{Vec2.Distance(s.Anchor, w.ArenaCenter):0} m from the arena (radius {w.ArenaRadius:0}), in combat {s.InCombat}, " +
+                                  string.Join(" ", s.Members.Select(m => $"{m.Role}:{m.Life}@{Vec2.Distance(m.Pos, w.ArenaCenter):0}")) +
+                                  "\n    enemies near: " + string.Join(" ", w.Units.Where(u => u.Faction == Faction.Enemy && !u.Removed && Vec2.Distance(u.Pos, s.Centroid) < 40f)
+                                      .Select(u => $"{u.Kind}#{u.Id}:{u.Life} hp {u.Hp:0}/{u.MaxHp:0} {Vec2.Distance(u.Pos, s.Centroid):0}m arena {Vec2.Distance(u.Pos, w.ArenaCenter):0} intent {u.Intent.Kind}")) +
+                                  "\n    tank intent " + s.Member(Role.Tank).Intent.Kind + " target " + s.Member(Role.Tank).Intent.TargetId + ", healer intent " + s.Member(Role.Healer).Intent.Kind);
         foreach (var s in w.Squads)
             Console.WriteLine($"  {s.Name}: DF tier {string.Join("", s.Members.Select(m => m.Doctrine.Tier(CommandType.DefensiveFormation)))}, max tiers {string.Join("", s.Members.Select(m => m.Doctrine.MaxTier))}");
     }

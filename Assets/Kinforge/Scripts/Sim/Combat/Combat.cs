@@ -62,6 +62,7 @@ namespace Kinforge.Sim
 
             tu.Hp -= dmg;
             tu.LastHurtTime = w.Time;
+            if (tu.IsPlayer) AddWound(tu, dmg * Balance.WoundFraction / Math.Max(1f, tu.MaxHp));
             if (owner?.Fight != null && owner.IsPlayer) owner.Fight.DamageDealt += dmg;
             if (tu.Fight != null) tu.Fight.DamageTaken += dmg;
 
@@ -148,7 +149,8 @@ namespace Kinforge.Sim
             if (target == null || target.Life != LifeState.Active || target.Removed) return 0f;
             float amt = amount;
             if (healer != null && healer.IsPlayer) amt *= 1f + Balance.MenderTierHeal * (healer.WeaponTier - 1);
-            float actual = Math.Min(amt, target.MaxHp - target.Hp);
+            // Wounds cap healing: only rest at base brings the ceiling back up.
+            float actual = Math.Min(amt, (target.IsPlayer ? target.HealCap : target.MaxHp) - target.Hp);
             if (actual <= 0f) return 0f;
             target.Hp += actual;
             target.LastHealedTime = w.Time;
@@ -237,10 +239,17 @@ namespace Kinforge.Sim
             }
         }
 
+        /// <summary>Lasting damage: lowers the health ceiling until the unit rests at base.</summary>
+        public static void AddWound(Unit u, float fraction)
+        {
+            u.Wound = Math.Min(Balance.MaxWound, u.Wound + fraction);
+        }
+
         public static void Down(World w, Unit u)
         {
             u.Life = LifeState.Downed;
             u.Hp = 0f;
+            AddWound(u, Balance.DownWound);
             u.DownedAt = w.Time;
             ResetForIncapacitated(w, u);
             if (u.Fight != null) u.Fight.Downs++;
@@ -397,7 +406,7 @@ namespace Kinforge.Sim
             var cache = DropCache(w, n > 0 ? sum / n : sq.Centroid, cores);
             sq.Task = SquadTask.Idle;
             SquadSystem.EndFight(w, sq, true);
-            w.Alert($"{sq.Name} was wiped out! Their kin-cores lie in a cache. Send another squad to recover them.", cache?.Pos ?? sq.Anchor, 2);
+            w.Alert($"{sq.Name} was wiped out! The clan will carry their kin-cores home to the Kin Cradle.", cache?.Pos ?? sq.Anchor, 2);
         }
 
         public static void Revive(World w, Unit u, float hpFraction, Unit by)
@@ -405,7 +414,7 @@ namespace Kinforge.Sim
             if (u.Life != LifeState.Downed) return;
             u.Life = LifeState.Active;
             u.Injured = true;
-            u.Hp = Math.Max(1f, u.MaxHp * hpFraction);
+            u.Hp = Math.Max(1f, Math.Min(u.HealCap, u.MaxHp * hpFraction));
             u.RestProgress = 0f;
             if (by?.Fight != null && by != u) by.Fight.Stabilizes++;
             w.Emit(SimEventType.Revived, u.Id, by?.Id ?? 0, u.Pos);
@@ -421,7 +430,10 @@ namespace Kinforge.Sim
             u.Pos = at;
             u.PrevPos = at;
             Titan.EndInstant(null, u, Titan.FadeFelled);
+            u.Wound = 0f;
             u.Hp = u.MaxHp;
+            u.Mana = u.MaxMana;
+            u.Stamina = u.MaxStamina;
             u.Status = default;
             u.Action = UnitAction.None;
             u.Garrisoned = false;

@@ -25,33 +25,44 @@ namespace Kinforge.Game
     }
 
     /// <summary>
-    /// Mouse and keyboard: select squads (click, box, number keys), give orders by right-clicking the
-    /// world, set combat commands with hotkeys, and drive the camera. The player never casts unit
-    /// abilities; they only set intent.
+    /// Direct control of the kin-band, like leading a WoW party: WASD / left stick walks the squad's
+    /// banner relative to the camera, the mouse (drag) or right stick orbits the camera, number keys or
+    /// the bumpers set the strategy, and right-click / A give context orders (attack, gather, recover
+    /// kin-cores, go home). The Vhorn still choose their own targets, positions and abilities inside the
+    /// strategy; the player never casts for them.
     /// </summary>
     public sealed class CommandInput
     {
         private readonly KinforgeGame _game;
-        private bool _boxing;
-        private Vector2 _boxStart;
-        private float _lastClickTime;
-        private int _lastClickUnit;
-        private float _lastNumberTime;
-        private int _lastNumber = -1;
+        private readonly Vector2[] _pressPos = new Vector2[2];
+        private readonly bool[] _pressed = new bool[2];
+        private readonly bool[] _dragging = new bool[2];
+        private Vector2 _lastMouse;
+        private bool _wasSteering;
+        private int _dpadX, _dpadY;
 
         public Pick Hover { get; private set; }
-        public bool Boxing => _boxing;
-        public Rect BoxRect { get; private set; }
+        public bool Boxing => false;
+        public Rect BoxRect => default;
+        public bool UsingPad { get; private set; }
 
-        public static readonly KeyCode[] CommandKeys =
-        {
-            KeyCode.Z, KeyCode.X, KeyCode.C, KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M, KeyCode.G, KeyCode.R, KeyCode.T,
-        };
-
+        /// <summary>Strategies in hotbar order: number keys 1-0 and the letter hotkeys pick the same slots.</summary>
         public static readonly CommandType[] CommandForKey =
         {
             CommandType.Charge, CommandType.DefensiveFormation, CommandType.HoldPosition, CommandType.Kite, CommandType.FocusFire,
             CommandType.SpreadOut, CommandType.Stack, CommandType.FallBack, CommandType.Rest, CommandType.Fortify,
+        };
+
+        public static readonly KeyCode[] CommandKeys =
+        {
+            // Stack has no letter any more: M opens the map.
+            KeyCode.Z, KeyCode.X, KeyCode.C, KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.None, KeyCode.G, KeyCode.R, KeyCode.T,
+        };
+
+        public static readonly KeyCode[] NumberKeys =
+        {
+            KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5,
+            KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0,
         };
 
         public CommandInput(KinforgeGame game)
@@ -61,64 +72,144 @@ namespace Kinforge.Game
 
         private World W => _game.World;
         private Selection Sel => _game.Selection;
+        public Squad Squad => W != null && W.Squads.Count > 0 ? W.Squads[0] : null;
 
         public void Update(float dt)
         {
             if (W == null || Keys.Broken) return;
+            var sq = Squad;
+            if (sq != null && (Sel.Squads.Count != 1 || Sel.Squads[0] != sq.Id)) Sel.SelectOnly(sq.Id);
+
             Vector2 mouse = Keys.Mouse;
             bool overUi = _game.Hud.IsPointerOverUi(mouse);
-
-            CameraInput(dt, mouse, overUi);
             Hover = overUi ? default : PickAt(mouse);
             Hotkeys();
+            Gamepad(dt);
 
-            if (_game.Hud.BlocksWorld) return;
-
-            // Left mouse: click or box select
-            if (Keys.MouseDown(0) && !overUi)
+            if (_game.Hud.BlocksWorld)
             {
-                _boxing = true;
-                _boxStart = mouse;
+                ReleaseSteer();
+                return;
             }
-            if (_boxing)
-            {
-                var min = Vector2.Min(_boxStart, mouse);
-                var max = Vector2.Max(_boxStart, mouse);
-                BoxRect = new Rect(min.x, Screen.height - max.y, max.x - min.x, max.y - min.y);
-                if (Keys.MouseUp(0) || !Keys.MouseHeld(0))
-                {
-                    _boxing = false;
-                    if ((mouse - _boxStart).magnitude > 8f) BoxSelect(min, max);
-                    else Click(PickAt(mouse));
-                }
-            }
+            Steering();
+            CameraControl(dt, mouse, overUi);
+            MouseButtons(mouse, overUi);
+            _lastMouse = mouse;
 
-            if (Keys.MouseDown(1) && !overUi) Order(PickAt(mouse));
+            // The camera rides with the banner (the base while garrisoned).
+            if (sq != null) _game.Rig.Follow(ToUnity.Ground(W, sq.Garrisoned ? W.BasePos : sq.Anchor));
         }
 
-        private void CameraInput(float dt, Vector2 mouse, bool overUi)
+        // ------------------------------------------------------------------------------------
+        // Movement and camera
+        // ------------------------------------------------------------------------------------
+
+        private void Steering()
+        {
+            var sq = Squad;
+            if (sq == null) return;
+            Vector2 v = Vector2.zero;
+            if (Keys.Held(KeyCode.W) || Keys.Held(KeyCode.UpArrow)) v.y += 1f;
+            if (Keys.Held(KeyCode.S) || Keys.Held(KeyCode.DownArrow)) v.y -= 1f;
+            if (Keys.Held(KeyCode.D) || Keys.Held(KeyCode.RightArrow)) v.x += 1f;
+            if (Keys.Held(KeyCode.A) || Keys.Held(KeyCode.LeftArrow)) v.x -= 1f;
+            var stick = Keys.Stick("KF Move X", "KF Move Y");
+            if (stick != Vector2.zero)
+            {
+                v = stick;
+                UsingPad = true;
+            }
+            else if (v != Vector2.zero) UsingPad = false;
+            v = Vector2.ClampMagnitude(v, 1f);
+            if (v.sqrMagnitude < 0.02f)
+            {
+                ReleaseSteer();
+                return;
+            }
+            // Camera-relative: forward is where the camera looks.
+            var rig = _game.Rig;
+            var world = rig.Right * v.x + rig.Forward * v.y;
+            var o = PlayerOrder.For(OrderType.Steer, Sel.Squads);
+            o.Pos = new Vec2(world.x, world.z);
+            W.Issue(o);
+            _wasSteering = true;
+        }
+
+        private void ReleaseSteer()
+        {
+            if (!_wasSteering) return;
+            _wasSteering = false;
+            var o = PlayerOrder.For(OrderType.Steer, Sel.Squads);
+            o.Pos = Vec2.Zero;
+            W.Issue(o);
+        }
+
+        private void CameraControl(float dt, Vector2 mouse, bool overUi)
         {
             var rig = _game.Rig;
-            Vector2 pan = Vector2.zero;
-            if (Keys.Held(KeyCode.W) || Keys.Held(KeyCode.UpArrow)) pan.y += 1f;
-            if (Keys.Held(KeyCode.S) || Keys.Held(KeyCode.DownArrow)) pan.y -= 1f;
-            if (Keys.Held(KeyCode.D) || Keys.Held(KeyCode.RightArrow)) pan.x += 1f;
-            if (Keys.Held(KeyCode.A) || Keys.Held(KeyCode.LeftArrow)) pan.x -= 1f;
-            if (rig.EdgeScroll && Application.isFocused)
-            {
-                const float edge = 6f;
-                if (mouse.x <= edge) pan.x -= 1f;
-                if (mouse.x >= Screen.width - edge) pan.x += 1f;
-                if (mouse.y <= edge) pan.y -= 1f;
-                if (mouse.y >= Screen.height - edge) pan.y += 1f;
-            }
             float rotate = 0f;
             if (Keys.Held(KeyCode.Q)) rotate -= 1f;
             if (Keys.Held(KeyCode.E)) rotate += 1f;
-            float zoom = overUi ? 0f : Keys.Scroll;
-            bool middle = Keys.MouseHeld(2);
-            bool alt = Keys.Held(KeyCode.LeftAlt) || Keys.Held(KeyCode.RightAlt);
-            rig.Control(dt, Vector2.ClampMagnitude(pan, 1f), rotate, zoom, middle, mouse, alt);
+            rig.Orbit(rotate * 110f * dt, 0f);
+            if (!overUi) rig.Zoom(Keys.Scroll);
+
+            var look = Keys.Stick("KF Look X", "KF Look Y");
+            if (look != Vector2.zero)
+            {
+                rig.Orbit(look.x * 160f * dt, -look.y * 90f * dt);
+                UsingPad = true;
+            }
+            float zoom = Keys.Axis("KF Trigger R") - Keys.Axis("KF Trigger L");
+            if (Mathf.Abs(zoom) > 0.1f) rig.Zoom(zoom * dt * 10f);
+
+            if (Keys.Down(KeyCode.Space) || Keys.PadDown(Keys.PadRStick)) CameraBehindSquad();
+        }
+
+        /// <summary>Swings the camera behind the squad's heading.</summary>
+        public void CameraBehindSquad()
+        {
+            var sq = Squad;
+            if (sq == null) return;
+            var f = sq.Forward;
+            _game.Rig.LookAlong(Mathf.Atan2(f.X, f.Z) * Mathf.Rad2Deg);
+        }
+
+        /// <summary>Kept for old callers: the camera always follows the kin-band now.</summary>
+        public void FocusSelection() => CameraBehindSquad();
+
+        /// <summary>
+        /// WoW-style mouse: drag with either button to orbit the camera; a left click inspects (or opens
+        /// a building), a right click gives a context order.
+        /// </summary>
+        private void MouseButtons(Vector2 mouse, bool overUi)
+        {
+            for (int b = 0; b < 2; b++)
+            {
+                if (Keys.MouseDown(b) && !overUi)
+                {
+                    _pressed[b] = true;
+                    _dragging[b] = false;
+                    _pressPos[b] = mouse;
+                }
+                if (!_pressed[b]) continue;
+                if (Keys.MouseHeld(b))
+                {
+                    if (!_dragging[b] && (mouse - _pressPos[b]).magnitude > 6f) _dragging[b] = true;
+                    if (_dragging[b])
+                    {
+                        var d = mouse - _lastMouse;
+                        _game.Rig.Orbit(d.x * 0.3f, -d.y * 0.2f);
+                    }
+                }
+                else
+                {
+                    _pressed[b] = false;
+                    if (_dragging[b]) continue;
+                    var pick = PickAt(mouse);
+                    if (b == 0) Click(pick);
+                    else Order(pick);
+                }
+            }
         }
 
         // ------------------------------------------------------------------------------------
@@ -200,26 +291,14 @@ namespace Kinforge.Game
         }
 
         // ------------------------------------------------------------------------------------
-        // Selection
+        // Clicks and orders
         // ------------------------------------------------------------------------------------
 
         private void Click(Pick p)
         {
-            var w = W;
             switch (p.Kind)
             {
                 case PickKind.PlayerUnit:
-                {
-                    var u = w.FindUnitAny(p.Id);
-                    if (u?.Squad == null) break;
-                    if (Keys.Shift) Sel.Toggle(u.Squad.Id);
-                    else Sel.SelectOnly(u.Squad.Id);
-                    Sel.InspectUnitId = u.Id;
-                    if (_lastClickUnit == u.Id && Time.unscaledTime - _lastClickTime < 0.35f) FocusSelection();
-                    _lastClickUnit = u.Id;
-                    _lastClickTime = Time.unscaledTime;
-                    break;
-                }
                 case PickKind.Enemy:
                     Sel.InspectUnitId = p.Id;
                     break;
@@ -227,75 +306,10 @@ namespace Kinforge.Game
                     _game.Hud.OpenBase(p.Building);
                     break;
                 default:
-                    if (!Keys.Shift)
-                    {
-                        Sel.Squads.Clear();
-                        Sel.InspectUnitId = 0;
-                    }
+                    Sel.InspectUnitId = 0;
                     break;
             }
         }
-
-        private void BoxSelect(Vector2 min, Vector2 max)
-        {
-            var w = W;
-            var rig = _game.Rig;
-            var found = new List<int>();
-            foreach (var sq in w.Squads)
-            {
-                foreach (var m in sq.Members)
-                {
-                    if (!m.IsActive) continue;
-                    var v = _game.View.UnitViewFor(m.Id);
-                    if (v == null) continue;
-                    var s = rig.Cam.WorldToScreenPoint(v.Position + Vector3.up);
-                    if (s.z > 0f && s.x >= min.x && s.x <= max.x && s.y >= min.y && s.y <= max.y)
-                    {
-                        found.Add(sq.Id);
-                        break;
-                    }
-                }
-            }
-            if (!Keys.Shift) Sel.Squads.Clear();
-            foreach (int id in found) Sel.Add(id);
-            if (found.Count > 0)
-            {
-                var sq = w.FindSquad(found[0]);
-                if (sq != null && sq.Members.Count > 0) Sel.InspectUnitId = sq.Members[0].Id;
-            }
-        }
-
-        public void SelectSquadIndex(int index, bool add)
-        {
-            var w = W;
-            if (index < 0 || index >= w.Squads.Count) return;
-            int id = w.Squads[index].Id;
-            if (add) Sel.Toggle(id);
-            else Sel.SelectOnly(id);
-            if (_lastNumber == index && Time.unscaledTime - _lastNumberTime < 0.35f) FocusSelection();
-            _lastNumber = index;
-            _lastNumberTime = Time.unscaledTime;
-        }
-
-        public void FocusSelection()
-        {
-            var w = W;
-            Vec2 sum = Vec2.Zero;
-            int n = 0;
-            foreach (int id in Sel.Squads)
-            {
-                var sq = w.FindSquad(id);
-                if (sq == null) continue;
-                sum += sq.Garrisoned ? w.BasePos : sq.Centroid;
-                n++;
-            }
-            if (n == 0) return;
-            _game.Rig.FocusOn(ToUnity.Ground(w, sum / n));
-        }
-
-        // ------------------------------------------------------------------------------------
-        // Orders
-        // ------------------------------------------------------------------------------------
 
         private void Order(Pick p)
         {
@@ -356,27 +370,108 @@ namespace Kinforge.Game
             W.Issue(PlayerOrder.For(t, Sel.Squads));
         }
 
+        private void CycleStrategy(int step)
+        {
+            var sq = Squad;
+            if (sq == null) return;
+            int i = System.Array.IndexOf(CommandForKey, sq.Stance);
+            if (i < 0) i = 1;
+            int n = CommandForKey.Length;
+            IssueCommand(CommandForKey[((i + step) % n + n) % n]);
+        }
+
+        private void CycleInspect(int step)
+        {
+            var sq = Squad;
+            if (sq == null || sq.Members.Count == 0) return;
+            int i = sq.Members.FindIndex(m => m.Id == Sel.InspectUnitId);
+            int n = sq.Members.Count;
+            i = i < 0 ? (step > 0 ? 0 : n - 1) : ((i + step) % n + n) % n;
+            Sel.InspectUnitId = sq.Members[i].Id;
+        }
+
+        /// <summary>Gamepad A: gather, recover kin-cores or garrison, whichever is right by the banner.</summary>
+        private void Interact()
+        {
+            var sq = Squad;
+            if (sq == null) return;
+            var w = W;
+            Vec2 at = sq.Anchor;
+            foreach (var c in w.Caches)
+            {
+                if (c.Removed || Vec2.Distance(c.Pos, at) > 10f) continue;
+                var o = PlayerOrder.For(OrderType.Recover, Sel.Squads);
+                o.TargetId = c.Id;
+                w.Issue(o);
+                return;
+            }
+            ResourceNode best = null;
+            float bestD = 12f;
+            foreach (var n in w.Nodes)
+            {
+                if (n.Removed) continue;
+                float d = Vec2.Distance(n.Pos, at) - n.Radius;
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = n;
+                }
+            }
+            if (best != null)
+            {
+                var o = PlayerOrder.For(OrderType.Gather, Sel.Squads);
+                o.TargetId = best.Id;
+                w.Issue(o);
+                return;
+            }
+            if (w.InBase(at))
+            {
+                IssueSimple(OrderType.Garrison);
+                return;
+            }
+            w.Alert("Nothing to gather or recover here. Walk the kin-band up to a resource or a kin-core cache.", 0);
+        }
+
+        /// <summary>Gamepad X: focus the visible enemy closest to the middle of the screen.</summary>
+        private void FocusAhead()
+        {
+            var w = W;
+            var rig = _game.Rig;
+            var mid = new Vector2(Screen.width * 0.5f, Screen.height * 0.55f);
+            Unit best = null;
+            float bestD = float.MaxValue;
+            foreach (var u in w.Units)
+            {
+                if (u.Faction != Faction.Enemy || !u.IsTargetable || !w.IsVisibleToPlayer(u.Pos)) continue;
+                var v = _game.View.UnitViewFor(u.Id);
+                if (v == null || !v.Visible || !rig.ToScreen(v.Position, out var sp)) continue;
+                float d = (sp - mid).sqrMagnitude;
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = u;
+                }
+            }
+            if (best == null) return;
+            var o = PlayerOrder.For(OrderType.Attack, Sel.Squads);
+            o.TargetId = best.Id;
+            w.Issue(o);
+            Sel.InspectUnitId = best.Id;
+            _game.View.Vfx.Ring(ToUnity.Ground(w, best.Pos, 0.1f), new Color(1f, 0.3f, 0.25f, 0.9f), 1.4f, 0.5f);
+        }
+
         private void Hotkeys()
         {
             var hud = _game.Hud;
             for (int i = 0; i < CommandKeys.Length; i++)
             {
-                if (Keys.Down(CommandKeys[i])) IssueCommand(CommandForKey[i]);
+                if ((CommandKeys[i] != KeyCode.None && Keys.Down(CommandKeys[i])) || Keys.Down(NumberKeys[i])) IssueCommand(CommandForKey[i]);
             }
             if (Keys.Down(KeyCode.H)) IssueSimple(OrderType.ReturnToBase);
             if (Keys.Down(KeyCode.J)) IssueSimple(OrderType.Garrison);
             if (Keys.Down(KeyCode.K)) IssueSimple(OrderType.Stop);
-
-            for (int i = 0; i < 6; i++)
-            {
-                if (Keys.Down(KeyCode.Alpha1 + i)) SelectSquadIndex(i, Keys.Shift);
-            }
-            if (Keys.Down(KeyCode.Tab) && W.Squads.Count > 0)
-            {
-                int cur = Sel.Squads.Count > 0 ? W.Squads.FindIndex(s => s.Id == Sel.Squads[0]) : -1;
-                SelectSquadIndex((cur + 1) % W.Squads.Count, false);
-            }
-            if (Keys.Down(KeyCode.Space)) FocusSelection();
+            if (Keys.Down(KeyCode.Tab)) CycleInspect(Keys.Shift ? -1 : 1);
+            if (Keys.Down(KeyCode.M)) hud.ToggleMap();
 
             if (Keys.Down(KeyCode.F1)) hud.ToggleHelp();
             if (Keys.Down(KeyCode.F2)) hud.ToggleBase();
@@ -384,18 +479,41 @@ namespace Kinforge.Game
             if (Keys.Down(KeyCode.Escape)) hud.Escape();
 
             // Playtest helpers
-            if (Keys.Down(KeyCode.F7) && _game.Selection.Squads.Count > 0)
+            if (Keys.Down(KeyCode.F7) && Sel.Squads.Count > 0)
             {
-                // Playtest drill: selected squads jump to Doctrine tier 3 (opens the Shieldbearer's Titan Form).
+                // Playtest drill: the kin-band jumps to Doctrine tier 3 (opens the Shieldbearer's Titan Form).
                 // Sent as an order so its unlock events reach the view on the next tick.
                 var drill = new PlayerOrder { Type = OrderType.DebugDrill, Arg = Balance.FourthAbilityTier };
-                drill.Squads.AddRange(_game.Selection.Squads);
+                drill.Squads.AddRange(Sel.Squads);
                 W.Issue(drill);
             }
-            if (Keys.Down(KeyCode.F8)) _game.Rig.EdgeScroll = !_game.Rig.EdgeScroll;
             if (Keys.Down(KeyCode.F9)) _game.CycleSpeed();
             if (Keys.Down(KeyCode.F10) && W.Boss != null && W.Boss.Active) W.Boss.DebugSkipToPhase(W, W.Boss.Phase + 1);
             if (Keys.Down(KeyCode.F11)) W.RevealMap = !W.RevealMap;
+        }
+
+        private void Gamepad(float dt)
+        {
+            var hud = _game.Hud;
+            bool any = false;
+            if (Keys.PadDown(Keys.PadLB)) { CycleStrategy(-1); any = true; }
+            if (Keys.PadDown(Keys.PadRB)) { CycleStrategy(1); any = true; }
+            if (Keys.PadDown(Keys.PadA)) { Interact(); any = true; }
+            if (Keys.PadDown(Keys.PadX)) { FocusAhead(); any = true; }
+            if (Keys.PadDown(Keys.PadY)) { IssueSimple(OrderType.ReturnToBase); any = true; }
+            if (Keys.PadDown(Keys.PadB)) { IssueCommand(CommandType.FallBack); any = true; }
+            if (Keys.PadDown(Keys.PadLStick)) { IssueCommand(CommandType.Rest); any = true; }
+            if (Keys.PadDown(Keys.PadBack)) { hud.ToggleBase(); any = true; }
+            if (Keys.PadDown(Keys.PadStart)) { hud.ToggleHelp(); any = true; }
+
+            // D-pad (an axis pair in the classic Input Manager): left/right picks a Vhorn to inspect, up/down zooms.
+            int dx = Mathf.RoundToInt(Keys.Axis("KF DPad X"));
+            int dy = Mathf.RoundToInt(Keys.Axis("KF DPad Y"));
+            if (dx != 0 && dx != _dpadX) { CycleInspect(dx); any = true; }
+            if (dy != 0) _game.Rig.Zoom(dy * dt * 6f);
+            _dpadX = dx;
+            _dpadY = dy;
+            if (any) UsingPad = true;
         }
     }
 }

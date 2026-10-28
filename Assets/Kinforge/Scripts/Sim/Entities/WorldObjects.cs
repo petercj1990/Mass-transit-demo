@@ -154,7 +154,7 @@ namespace Kinforge.Sim
         public string Label;
     }
 
-    /// <summary>Kin-cores dropped where a squad was wiped. Another squad must fight its way there.</summary>
+    /// <summary>Kin-cores dropped where the kin-band was wiped. The clan carries them home once nobody is left standing.</summary>
     public sealed class CoreCache
     {
         public int Id;

@@ -9,8 +9,9 @@ namespace Kinforge.EditorTools
 {
     /// <summary>
     /// First-open setup: creates Assets/Kinforge/Scenes/Main.unity (Unity writes the file itself),
-    /// adds it to Build Settings and opens it. The game builds itself from code at Play, so the scene
-    /// only needs Unity's default camera and light.
+    /// adds it to Build Settings and opens it, and adds the gamepad stick and trigger axes the game
+    /// reads to this project's Input Manager settings. The game builds itself from code at Play, so
+    /// the scene only needs Unity's default camera and light.
     /// </summary>
     [InitializeOnLoad]
     public static class KinforgeProjectSetup
@@ -21,6 +22,64 @@ namespace Kinforge.EditorTools
         static KinforgeProjectSetup()
         {
             EditorApplication.delayCall += AutoSetup;
+            EditorApplication.delayCall += EnsureGamepadAxes;
+        }
+
+        // Gamepad axes (Xbox layout as Windows reports it; 0-based axis index): sticks, triggers, d-pad.
+        private static readonly (string name, int axis, bool invert)[] PadAxes =
+        {
+            ("KF Move X", 0, false),
+            ("KF Move Y", 1, true),
+            ("KF Look X", 3, false),
+            ("KF Look Y", 4, true),
+            ("KF DPad X", 5, false),
+            ("KF DPad Y", 6, false),
+            ("KF Trigger L", 8, false),
+            ("KF Trigger R", 9, false),
+        };
+
+        /// <summary>
+        /// Adds the joystick axes the game reads (KF Move/Look/DPad/Trigger) to ProjectSettings/InputManager.asset
+        /// if they are missing. Only touches entries with these names.
+        /// </summary>
+        [MenuItem("Kinforge/Set Up Gamepad Axes")]
+        public static void EnsureGamepadAxes()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/InputManager.asset");
+            if (assets == null || assets.Length == 0) return;
+            var so = new SerializedObject(assets[0]);
+            var axes = so.FindProperty("m_Axes");
+            if (axes == null || !axes.isArray) return;
+            var have = new HashSet<string>();
+            for (int i = 0; i < axes.arraySize; i++) have.Add(axes.GetArrayElementAtIndex(i).FindPropertyRelative("m_Name").stringValue);
+            int added = 0;
+            foreach (var (name, axis, invert) in PadAxes)
+            {
+                if (have.Contains(name)) continue;
+                axes.arraySize++;
+                var e = axes.GetArrayElementAtIndex(axes.arraySize - 1);
+                e.FindPropertyRelative("m_Name").stringValue = name;
+                e.FindPropertyRelative("descriptiveName").stringValue = "";
+                e.FindPropertyRelative("descriptiveNegativeName").stringValue = "";
+                e.FindPropertyRelative("negativeButton").stringValue = "";
+                e.FindPropertyRelative("positiveButton").stringValue = "";
+                e.FindPropertyRelative("altNegativeButton").stringValue = "";
+                e.FindPropertyRelative("altPositiveButton").stringValue = "";
+                e.FindPropertyRelative("gravity").floatValue = 0f;
+                e.FindPropertyRelative("dead").floatValue = 0.19f;
+                e.FindPropertyRelative("sensitivity").floatValue = 1f;
+                e.FindPropertyRelative("snap").boolValue = false;
+                e.FindPropertyRelative("invert").boolValue = invert;
+                e.FindPropertyRelative("type").intValue = 2; // joystick axis
+                e.FindPropertyRelative("axis").intValue = axis;
+                e.FindPropertyRelative("joyNum").intValue = 0; // any joystick
+                added++;
+            }
+            if (added == 0) return;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[Kinforge] Added {added} gamepad axes to the Input Manager (sticks, triggers, d-pad).");
         }
 
         private static void AutoSetup()

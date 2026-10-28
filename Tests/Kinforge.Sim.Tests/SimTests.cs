@@ -319,7 +319,7 @@ namespace Kinforge.Sim.Tests
     public class EconomyTests
     {
         [Fact]
-        public void Recruit_respects_the_war_hall_cap()
+        public void One_kin_band_and_the_war_hall_makes_it_stronger()
         {
             var w = World.Create(2);
             w.Stock.Add(ResourceKind.Scrap, 500f);
@@ -327,16 +327,19 @@ namespace Kinforge.Sim.Tests
             w.Stock.Add(ResourceKind.Fiber, 500f);
             w.Stock.Add(ResourceKind.Hide, 500f);
             w.Stock.Add(ResourceKind.Ferrite, 500f);
+            var tank = w.Squads[0].Member(Role.Tank);
+            float hp = tank.MaxHp, mana = tank.MaxMana, stamina = tank.MaxStamina;
             w.Issue(new PlayerOrder { Type = OrderType.Recruit });
+            w.Issue(new PlayerOrder { Type = OrderType.UpgradeWarHall });
             w.Step();
             Assert.False(w.Base.Recruiting);
-            w.Issue(new PlayerOrder { Type = OrderType.UpgradeWarHall });
-            w.Issue(new PlayerOrder { Type = OrderType.Recruit });
-            w.Step();
-            Assert.True(w.Base.Recruiting);
-            for (int i = 0; i < 20 * 35; i++) w.Step();
-            Assert.Equal(2, w.Squads.Count);
-            Assert.All(w.Squads[1].Members, m => Assert.Equal(0, m.Doctrine.MaxTier));
+            Assert.Single(w.Squads);
+            Assert.Equal(2, w.Base.WarHallLevel);
+            Assert.Equal(2, tank.HallLevel);
+            Assert.Equal(hp * (1f + Balance.HallHealthPerLevel), tank.MaxHp, 2);
+            Assert.Equal(mana * (1f + Balance.HallResourcePerLevel), tank.MaxMana, 2);
+            Assert.Equal(stamina * (1f + Balance.HallResourcePerLevel), tank.MaxStamina, 2);
+            Assert.Equal(1f, tank.HpFraction, 2);
         }
 
         [Fact]
@@ -404,6 +407,18 @@ namespace Kinforge.Sim.Tests
             Assert.Equal(0, w.Boss.Phase);
             Assert.Empty(w.Caches);
             Assert.All(sq.Members, m => Assert.True(m.Core == CoreState.AtCradle || m.Life == LifeState.Active));
+        }
+
+        [Fact]
+        public void A_sleeping_Rustmaw_does_not_pin_a_kin_band_at_the_gate()
+        {
+            var w = Scenarios.BossArena(1);
+            var sq = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(0f, -(w.ArenaRadius + 12f)), 2, CommandType.DefensiveFormation, 2);
+            // A stray heal or shot from outside the lair lands on its threat table.
+            w.Boss.Body.Threat.Add(sq.Member(Role.Tank).Id, 50f);
+            for (int i = 0; i < 20 * (int)(Balance.CombatEndDelay + 2f); i++) w.Step();
+            Assert.Equal(0, w.Boss.Phase);
+            Assert.False(sq.InCombat);
         }
 
         [Fact]

@@ -24,6 +24,8 @@ namespace Kinforge.Sim
         ResetInstinct,
         // Playtest only: drill the squads to Doctrine tier Arg (F7)
         DebugDrill,
+        // Direct control: steer the squad's banner this tick (Pos = direction, length 0..1)
+        Steer,
     }
 
     public sealed class PlayerOrder

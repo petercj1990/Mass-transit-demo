@@ -12,6 +12,8 @@ namespace Kinforge.Sim
         public float Windup;
         public bool Projectile;
         public float ProjectileSpeed;
+        /// <summary>Stamina each swing costs a Vhorn (heavy melee); exhausted units swing slower.</summary>
+        public float StaminaCost;
         public float SpreadDeg;
         public bool IsMelee => !Projectile;
     }
@@ -43,6 +45,10 @@ namespace Kinforge.Sim
         public AttackDef Attack;
         public float ThreatMul = 1f;
         public float Carry;
+        /// <summary>Kin-power for abilities that channel the kin-core (heals, walls, siege works, Titan Form).</summary>
+        public float MaxMana;
+        /// <summary>Body for sprinting, dodging and heavy physical moves.</summary>
+        public float MaxStamina;
         public float[] Resist = { 1f, 1f, 1f, 1f, 1f, 1f };
         public AbilityId[] Kit = new AbilityId[0];
         public bool Flying;
@@ -74,15 +80,15 @@ namespace Kinforge.Sim
             Add(new UnitDef
             {
                 Kind = UnitKind.Shieldbearer, Name = "Shieldbearer", Role = Role.Tank,
-                MaxHp = 430f, Armor = 40f, Speed = 4.2f, Radius = 0.75f, Mass = 3.5f, ThreatMul = 3f, Carry = 30f, Height = 2.3f,
-                Attack = new AttackDef { Name = "Shield Mace", Range = 1.6f, Damage = 14f, Type = DamageType.Kinetic, Cooldown = 1.4f, Windup = 0.35f },
+                MaxHp = 430f, Armor = 40f, Speed = 4.2f, Radius = 0.75f, Mass = 3.5f, ThreatMul = 3f, Carry = 30f, Height = 2.3f, MaxMana = 70f, MaxStamina = 120f,
+                Attack = new AttackDef { Name = "Shield Mace", Range = 1.6f, Damage = 14f, Type = DamageType.Kinetic, Cooldown = 1.4f, Windup = 0.35f, StaminaCost = 2f },
                 Kit = new[] { AbilityId.TauntRoar, AbilityId.ShieldBash, AbilityId.ShockwaveSlam, AbilityId.TitanForm },
                 Blurb = "Holds enemy attention, body-blocks and protects the Mender.",
             });
             Add(new UnitDef
             {
                 Kind = UnitKind.Mender, Name = "Mender", Role = Role.Healer,
-                MaxHp = 220f, Armor = 10f, Speed = 4.5f, Radius = 0.55f, Mass = 1f, Carry = 20f, Height = 2.1f,
+                MaxHp = 220f, Armor = 10f, Speed = 4.5f, Radius = 0.55f, Mass = 1f, Carry = 20f, Height = 2.1f, MaxMana = 170f, MaxStamina = 70f,
                 Attack = new AttackDef { Name = "Sear Bolt", Range = 14f, Damage = 8f, Type = DamageType.Thermal, Cooldown = 1.6f, Windup = 0.3f, Projectile = true, ProjectileSpeed = 26f, SpreadDeg = 2.5f },
                 Kit = new[] { AbilityId.MendBeam, AbilityId.RegenField, AbilityId.Stabilize },
                 Blurb = "Keeps the squad alive, stabilises downed kin.",
@@ -90,15 +96,15 @@ namespace Kinforge.Sim
             Add(new UnitDef
             {
                 Kind = UnitKind.Bruiser, Name = "Bruiser", Role = Role.Melee,
-                MaxHp = 300f, Armor = 20f, Speed = 4.8f, Radius = 0.6f, Mass = 1.6f, Carry = 20f, Height = 2.2f,
-                Attack = new AttackDef { Name = "Twin Blades", Range = 1.7f, Damage = 22f, Type = DamageType.Kinetic, Cooldown = 1.1f, Windup = 0.28f },
+                MaxHp = 300f, Armor = 20f, Speed = 4.8f, Radius = 0.6f, Mass = 1.6f, Carry = 20f, Height = 2.2f, MaxMana = 50f, MaxStamina = 120f,
+                Attack = new AttackDef { Name = "Twin Blades", Range = 1.7f, Damage = 22f, Type = DamageType.Kinetic, Cooldown = 1.1f, Windup = 0.28f, StaminaCost = 3f },
                 Kit = new[] { AbilityId.Cleave, AbilityId.GutHook, AbilityId.CorrodeEdge },
                 Blurb = "Close-range damage; finishes what the Warwright traps.",
             });
             Add(new UnitDef
             {
                 Kind = UnitKind.Siegewright, Name = "Siegewright", Role = Role.Siege,
-                MaxHp = 230f, Armor = 12f, Speed = 4.3f, Radius = 0.55f, Mass = 1.1f, Carry = 20f, Height = 2.1f,
+                MaxHp = 230f, Armor = 12f, Speed = 4.3f, Radius = 0.55f, Mass = 1.1f, Carry = 20f, Height = 2.1f, MaxMana = 120f, MaxStamina = 80f,
                 Attack = new AttackDef { Name = "Long Rifle", Range = 18f, Damage = 20f, Type = DamageType.Kinetic, Cooldown = 1.6f, Windup = 0.25f, Projectile = true, ProjectileSpeed = 42f, SpreadDeg = 2.2f },
                 Kit = new[] { AbilityId.BurstVolley, AbilityId.BoltTurret, AbilityId.MortarPit },
                 Blurb = "Ranged damage; builds turrets and siege works.",
@@ -106,8 +112,8 @@ namespace Kinforge.Sim
             Add(new UnitDef
             {
                 Kind = UnitKind.Warwright, Name = "Warwright", Role = Role.Warwright,
-                MaxHp = 280f, Armor = 25f, Speed = 4.2f, Radius = 0.65f, Mass = 1.8f, ThreatMul = 1.2f, Carry = 25f, Height = 2.2f,
-                Attack = new AttackDef { Name = "Rig Hammer", Range = 1.6f, Damage = 10f, Type = DamageType.Kinetic, Cooldown = 1.5f, Windup = 0.35f },
+                MaxHp = 280f, Armor = 25f, Speed = 4.2f, Radius = 0.65f, Mass = 1.8f, ThreatMul = 1.2f, Carry = 25f, Height = 2.2f, MaxMana = 140f, MaxStamina = 90f,
+                Attack = new AttackDef { Name = "Rig Hammer", Range = 1.6f, Damage = 10f, Type = DamageType.Kinetic, Cooldown = 1.5f, Windup = 0.35f, StaminaCost = 2f },
                 Kit = new[] { AbilityId.RaiseRampart, AbilityId.SpikeField, AbilityId.SnareCage },
                 Blurb = "Raises cover, lays traps and seals escape routes.",
             });
@@ -163,7 +169,7 @@ namespace Kinforge.Sim
             Add(new UnitDef
             {
                 Kind = UnitKind.Rustmaw, Name = "Rustmaw", Role = Role.Enemy, Family = EnemyFamily.Rustmaw,
-                MaxHp = 16000f, Armor = 70f, Speed = 4.2f, Radius = 2.4f, Mass = 40f, Height = 3.4f, Sight = 40f, XpValue = 20f,
+                MaxHp = Balance.RustmawHp, Armor = 70f, Speed = 4.2f, Radius = 2.4f, Mass = 40f, Height = 3.4f, Sight = 40f, XpValue = 20f,
                 Attack = new AttackDef { Name = "Plated Swipe", Range = 2.4f, Damage = 55f, Type = DamageType.Kinetic, Cooldown = 2.6f, Windup = 0.6f },
                 Resist = new[] { 0.8f, 0.6f, 1.3f, 1f, 1.4f, 1f },
                 Kit = new[] { AbilityId.RustmawSwipe },

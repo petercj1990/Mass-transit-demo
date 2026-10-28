@@ -26,6 +26,8 @@ namespace Kinforge.Game
         private readonly Dictionary<int, TelegraphView> _telegraphs = new Dictionary<int, TelegraphView>();
         private readonly Dictionary<int, LineRenderer> _beams = new Dictionary<int, LineRenderer>();
         private readonly Dictionary<int, Decal> _titanShadows = new Dictionary<int, Decal>();
+        private GameObject _banner;
+        private Material _bannerRingMat;
         private readonly Stack<GameObject> _projectilePool = new Stack<GameObject>();
         private readonly HashSet<int> _seen = new HashSet<int>();
         private readonly List<int> _drop = new List<int>();
@@ -60,6 +62,7 @@ namespace Kinforge.Game
             SyncProjectiles(alpha);
             SyncTelegraphs();
             SyncTitanShadows();
+            SyncBanner(dt);
             SyncBeams();
             foreach (var e in _game.FrameEvents) OnEvent(e);
             Vfx.Update(dt);
@@ -219,6 +222,36 @@ namespace Kinforge.Game
                 v.Sync(_w, t, visible);
             }
             Prune(_telegraphs, v => v.Destroy());
+        }
+
+        /// <summary>
+        /// The commander's banner: where WASD is walking the kin-band (its formation and fighting
+        /// anchor). A pennant on a pole with a soft ring on the ground, in the squad colour.
+        /// </summary>
+        private void SyncBanner(float dt)
+        {
+            var sq = _w.Squads.Count > 0 ? _w.Squads[0] : null;
+            bool show = sq != null && !sq.Garrisoned && !sq.Wiped;
+            if (_banner == null)
+            {
+                if (!show) return;
+                _banner = new GameObject("Banner");
+                _banner.transform.SetParent(_fxRoot, false);
+                var col = Palette.Squad(sq.ColorIndex);
+                var pole = Mats.Lit(Palette.DarkAlloy, 0.3f, 0.4f);
+                Prim.Tube(_banner.transform, new Vector3(0f, 1.3f, 0f), new Vector3(0.06f, 1.3f, 0.06f), pole, default, false);
+                Prim.Box(_banner.transform, new Vector3(0.28f, 2.25f, 0f), new Vector3(0.5f, 0.34f, 0.04f), Mats.Lit(col), default, false);
+                Prim.Ball(_banner.transform, new Vector3(0f, 2.65f, 0f), Vector3.one * 0.14f, Mats.Glow(Palette.KinMark, 2.5f), default, false);
+                _bannerRingMat = Mats.NewTransparent(new Color(col.r, col.g, col.b, 0.5f), Tex.Ring);
+                Prim.Mesh(MeshKit.Quad, _banner.transform, new Vector3(0f, 0.08f, 0f), Vector3.one * 2.4f, _bannerRingMat, default, false);
+            }
+            if (_banner.activeSelf != show) _banner.SetActive(show);
+            if (!show) return;
+            var target = ToUnity.Ground(_w, sq.Anchor, 0f);
+            var t = _banner.transform;
+            t.position = Vector3.Lerp(t.position, target, (t.position - target).sqrMagnitude > 64f ? 1f : 1f - Mathf.Exp(-14f * dt));
+            float pulse = 0.35f + 0.15f * Mathf.Sin(Time.time * 3f);
+            Mats.SetColor(_bannerRingMat, new Color(1f, 0.8f, 0.4f, pulse));
         }
 
         /// <summary>

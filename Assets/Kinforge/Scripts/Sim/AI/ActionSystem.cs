@@ -85,7 +85,16 @@ namespace Kinforge.Sim
                         u.Action = UnitAction.None;
                     u.HasMoveGoal = true;
                     u.MoveGoal = it.Point;
-                    if (it.Kind == IntentKind.Dodge) u.MoveSpeedMul = 1.15f;
+                    if (it.Kind == IntentKind.Dodge)
+                    {
+                        // A dodge is a burst of stamina; an exhausted Vhorn can only stumble clear.
+                        if (u.IsPlayer && w.Time - u.DodgeSince > 1f)
+                        {
+                            if (u.Stamina >= Balance.DodgeStamina) u.SpendStamina(Balance.DodgeStamina, w.Time);
+                            u.DodgeSince = w.Time;
+                        }
+                        u.MoveSpeedMul = u.IsPlayer && u.Exhausted ? 0.9f : 1.15f;
+                    }
                     if (u.IsPlayer && u.Squad != null && u.Squad.Stance == CommandType.Charge && u.Squad.InCombat) u.MoveSpeedMul = 1.15f;
                     break;
 
@@ -195,7 +204,7 @@ namespace Kinforge.Sim
                 return;
             }
             if (u.IsBusy) return;
-            if (!slot.Ready)
+            if (!slot.Ready || !u.CanAfford(slot.Def))
             {
                 it.Kind = IntentKind.Idle;
                 return;
@@ -268,7 +277,9 @@ namespace Kinforge.Sim
             var ad = u.Def.Attack;
             u.Action = UnitAction.None;
             float slow = u.IsPlayer ? 1f + Balance.LoadAttackPenalty * u.LoadFraction : 1f;
+            if (u.IsPlayer && u.Exhausted) slow *= Balance.ExhaustedAttackMul;
             u.AttackCooldown = ad.Cooldown * slow;
+            u.SpendStamina(ad.StaminaCost, w.Time);
             u.LastAttackTime = w.Time;
             var target = w.FindEntity(u.ActionTargetId);
             if (target == null || !target.IsTargetable) return;
@@ -322,6 +333,7 @@ namespace Kinforge.Sim
             u.ActionShots = 0;
             slot.Cooldown = id == AbilityId.TitanForm ? Balance.TitanCastCooldown : def.Cooldown;
             u.LastCastTime = w.Time;
+            u.Spend(def, w.Time);
             if (id == AbilityId.TailSlam || id == AbilityId.RustmawSwipe)
             {
                 var target = w.FindEntity(targetId);
@@ -398,6 +410,16 @@ namespace Kinforge.Sim
                     {
                         end = true;
                         break;
+                    }
+                    if (u.IsPlayer && def.ManaPerSecond > 0f)
+                    {
+                        // Channels drain mana while they last; an empty Mender stops mid-beam.
+                        u.Mana -= def.ManaPerSecond * dt;
+                        if (u.Mana <= 0f)
+                        {
+                            u.Mana = 0f;
+                            end = true;
+                        }
                     }
                     float rate = def.Power;
                     if (u.ActionAbility == AbilityId.WeldBeam && t.Kind == UnitKind.Rustmaw && w.Boss != null) rate = w.Boss.WeldRate;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Kinforge.Sim
@@ -99,6 +100,15 @@ namespace Kinforge.Sim
         /// <summary>Sim time until which a grown tank is braced to meet a charge (set by its AI while reading the tell).</summary>
         public float TitanBraceUntil = -999f;
 
+        // Resources (Vhorn): mana for kin-powered abilities, stamina for physical ones, and wounds:
+        // a share of damage taken that lowers the health ceiling until the squad rests at base.
+        public float Mana;
+        public float Stamina;
+        public float Wound;
+        public int HallLevel = 1;
+        public float LastExertTime = -999f;
+        public float DodgeSince = -999f;
+
         // Action state
         public UnitAction Action;
         public float ActionTimer;
@@ -173,6 +183,7 @@ namespace Kinforge.Sim
             get
             {
                 float hp = Def.MaxHp * (1f + Balance.ArmorTierHealth * (ArmorTier - 1));
+                if (HallLevel > 1) hp *= 1f + Balance.HallHealthPerLevel * (HallLevel - 1);
                 if (Injured) hp *= Balance.InjuredMaxHpMul;
                 if (TitanT > 0f) hp *= 1f + (Balance.TitanHpMul - 1f) * TitanT;
                 return hp;
@@ -191,6 +202,41 @@ namespace Kinforge.Sim
         }
 
         public bool TitanActive => TitanTime > 0f;
+
+        public float MaxMana => Def.MaxMana * (1f + Balance.HallResourcePerLevel * (HallLevel - 1));
+        public float MaxStamina => Def.MaxStamina * (1f + Balance.HallResourcePerLevel * (HallLevel - 1));
+        public float ManaFraction => MaxMana > 0f ? Mana / MaxMana : 0f;
+        public float StaminaFraction => MaxStamina > 0f ? Stamina / MaxStamina : 0f;
+        public bool Exhausted => Def.MaxStamina > 0f && Stamina < MaxStamina * Balance.ExhaustedFraction;
+        /// <summary>How high healing can bring this unit until it rests at base.</summary>
+        public float HealCap => MaxHp * (1f - Wound);
+
+        public bool CanAfford(AbilityDef def)
+        {
+            if (!IsPlayer) return true;
+            if (def.ManaCost > 0f && Mana < def.ManaCost) return false;
+            if (def.ManaPerSecond > 0f && Mana < def.ManaPerSecond * 0.5f) return false;
+            if (def.StaminaCost > 0f && Stamina < def.StaminaCost) return false;
+            return true;
+        }
+
+        public void Spend(AbilityDef def, float now)
+        {
+            if (!IsPlayer) return;
+            Mana = Math.Max(0f, Mana - def.ManaCost);
+            if (def.StaminaCost > 0f)
+            {
+                Stamina = Math.Max(0f, Stamina - def.StaminaCost);
+                LastExertTime = now;
+            }
+        }
+
+        public void SpendStamina(float amount, float now)
+        {
+            if (!IsPlayer || amount <= 0f) return;
+            Stamina = Math.Max(0f, Stamina - amount);
+            LastExertTime = now;
+        }
         public float Mass => TitanT > 0f ? Def.Mass + (Balance.TitanMass - Def.Mass) * TitanT : Def.Mass;
         public float ThreatMul => TitanT > 0f ? Def.ThreatMul * (1f + (Balance.TitanThreatMul - 1f) * TitanT) : Def.ThreatMul;
         /// <summary>Visual height multiplier, for the view and HUD anchors.</summary>
@@ -218,7 +264,7 @@ namespace Kinforge.Sim
         public bool AbilityReady(AbilityId id)
         {
             var s = Slot(id);
-            return s != null && s.Ready;
+            return s != null && s.Ready && CanAfford(s.Def);
         }
 
         public bool IsBusy => Action == UnitAction.Windup || Action == UnitAction.Casting || Action == UnitAction.Channel;

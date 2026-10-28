@@ -16,6 +16,7 @@ namespace Kinforge.Sim
             if (u.Injured) s *= Balance.InjuredSpeedMul;
             if (u.IsPlayer) s *= 1f - Balance.LoadSpeedPenalty * u.LoadFraction;
             if (u.TitanT > 0f) s *= 1f - (1f - Balance.TitanSpeedMul) * u.TitanT;
+            if (u.IsPlayer && u.Exhausted) s *= Balance.ExhaustedSpeedMul;
             float slow = Math.Max(u.Status.SlowPct, u.Status.CryoStacks * Balance.CryoSlowPerStack);
             s *= Math.Max(0.3f, 1f - slow);
             return s;

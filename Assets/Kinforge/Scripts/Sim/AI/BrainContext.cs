@@ -32,6 +32,8 @@ namespace Kinforge.Sim
         public Unit Ww;
         public Unit Focus;
         public Unit Boss;
+        /// <summary>Share of mana and stamina this unit keeps back (0 for green units, who spend freely).</summary>
+        public float Reserve;
 
         public Intent Best;
         public float BestScore;
@@ -78,6 +80,11 @@ namespace Kinforge.Sim
             bool anchored = Cmd == CommandType.DefensiveFormation || Cmd == CommandType.HoldPosition || Cmd == CommandType.Fortify;
             Anchor = anchored ? Sq.CombatAnchor : Center;
             if (Cmd == CommandType.Stack) Anchor = StackPoint();
+            // While the commander is moving the banner, every posture forms up around it.
+            if (InFight && w.Time - Sq.LastSteeredAt < 1.5f) Anchor = Sq.CombatAnchor;
+
+            // Doctrine tier 1 "fires abilities on cooldown"; from tier 2 a learned reserve is kept back.
+            Reserve = Tier >= 2 ? P(InstinctParam.Reserve) : 0f;
 
             UpdateFocus();
             Focus = W.FindUnit(Sq.FocusTargetId != 0 ? Sq.FocusTargetId : Sq.AiFocusId);
@@ -92,11 +99,33 @@ namespace Kinforge.Sim
 
         public void Offer(float score, Intent it, string label)
         {
+            if (it.Kind == IntentKind.Ability && it.Ability != AbilityId.None && U.IsPlayer) score -= ResourcePenalty(it.Ability);
             if (Debug) Record(label ?? it.Kind.ToString(), score);
             if (score <= BestScore) return;
             BestScore = score;
             it.Score = score;
             Best = it;
+        }
+
+        /// <summary>
+        /// Resource management in the utility AI: an ability that would dig into the unit's reserve of
+        /// mana or stamina scores lower, so routine casts wait while emergencies (high scores) still go.
+        /// </summary>
+        public float ResourcePenalty(AbilityId id)
+        {
+            if (Reserve <= 0f) return 0f;
+            var def = AbilityDefs.Get(id);
+            float pen = 0f;
+            float mana = def.ManaCost + def.ManaPerSecond * def.ChannelTime;
+            if (mana > 0f && U.MaxMana > 0f) pen += Dip(U.Mana, U.MaxMana, mana);
+            if (def.StaminaCost > 0f && U.MaxStamina > 0f) pen += Dip(U.Stamina, U.MaxStamina, def.StaminaCost);
+            return pen;
+        }
+
+        private float Dip(float current, float max, float cost)
+        {
+            float after = (current - cost) / max;
+            return after < Reserve ? (Reserve - after) * Balance.ReservePenalty : 0f;
         }
 
         private void Record(string label, float score)

@@ -46,6 +46,7 @@ namespace Kinforge.Sim
                 }
 
                 DepositAtBase(w, sq);
+                UpdateSteer(w, sq, dt);
                 UpdateTask(w, sq);
                 UpdateMarch(w, sq, dt);
             }
@@ -433,6 +434,59 @@ namespace Kinforge.Sim
             }
             sq.Anchor = w.BasePos;
             sq.MarchPoint = w.BasePos;
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Direct control
+        // ---------------------------------------------------------------------------------------
+
+        public static bool IsSteering(World w, Squad sq) =>
+            w.Time - sq.SteerAt <= Balance.SteerTimeout && sq.SteerDir.LengthSq >= 0.01f;
+
+        /// <summary>
+        /// WASD or a stick walks the squad's banner (its Anchor); the five keep formation around it
+        /// out of combat and fight around it in combat. Steering cancels travel orders, the way walking
+        /// off cancels click-to-move.
+        /// </summary>
+        private static void UpdateSteer(World w, Squad sq, float dt)
+        {
+            if (!IsSteering(w, sq)) return;
+            if (sq.Garrisoned) Ungarrison(w, sq);
+            Vec2 dir = sq.SteerDir.Normalized;
+            float mag = Math.Min(1f, sq.SteerDir.Length);
+            if (sq.Task != SquadTask.Idle)
+            {
+                sq.Task = SquadTask.Idle;
+                sq.ResumeTask = SquadTask.Idle;
+                sq.Forced = false;
+            }
+            Orders.LeaveSpecialStances(sq);
+
+            float speed = sq.MarchSpeed * mag;
+            // Don't let the banner run away from the kin.
+            float lead = Vec2.Dot(sq.Anchor - sq.Centroid, dir);
+            if (lead > Balance.SteerLeash) speed *= Math.Max(0.15f, 1f - (lead - Balance.SteerLeash) / 3f);
+            Vec2 from = sq.Anchor;
+            Vec2 next = from + dir * (speed * dt);
+            if (w.Nav.BlocksMoveAt(next))
+            {
+                // Slide along walls and rocks.
+                var sx = new Vec2(next.X, from.Z);
+                var sz = new Vec2(from.X, next.Z);
+                next = !w.Nav.BlocksMoveAt(sx) ? sx : !w.Nav.BlocksMoveAt(sz) ? sz : from;
+            }
+            float max = Balance.MapSize - 2f;
+            next = new Vec2(KMath.Clamp(next.X, 2f, max), KMath.Clamp(next.Z, 2f, max));
+            sq.Anchor = next;
+            sq.MarchPoint = next;
+            sq.CombatAnchor = next;
+            sq.LastSteeredAt = w.Time;
+            if (!sq.InCombat)
+            {
+                float a = KMath.RotateTowards(sq.MarchHeading.ToAngle(), dir.ToAngle(), 5f * dt);
+                sq.MarchHeading = Vec2.FromAngle(a);
+                sq.Forward = sq.MarchHeading;
+            }
         }
 
         // ---------------------------------------------------------------------------------------

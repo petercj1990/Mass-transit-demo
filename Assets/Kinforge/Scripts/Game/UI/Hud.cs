@@ -31,14 +31,13 @@ namespace Kinforge.Game
         private bool _showLog;
         private bool _victoryDismissed;
         private bool _showObjectives = true;
+        private bool _showMap;
         private Vector2 _logScroll;
         private int _reportSeen;
         private float _reportShownAt = -100f;
 
         private GUIStyle _panel, _label, _small, _tiny, _title, _big, _button, _buttonOn, _buttonOff, _bar, _center, _floatStyle, _tooltip, _hidden;
-        private GUIStyle _tinyBold, _tinyCenterBold, _tinyCenterWhite, _smallRight, _wrapTiny, _wrapSmall, _wrapLabel;
-        private int _lastCardClickSquad;
-        private float _lastCardClickTime;
+        private GUIStyle _tinyBold, _tinyCenterBold, _tinyCenterWhite, _smallRight, _wrapTiny, _wrapSmall, _wrapLabel, _tinyRightFrame;
         private bool _stylesReady;
 
         public Hud(KinforgeGame g)
@@ -62,6 +61,7 @@ namespace Kinforge.Game
         public void ToggleHelp() => _showHelp = !_showHelp;
         public void ToggleBase() => _showBase = !_showBase;
         public void ToggleLog() => _showLog = !_showLog;
+        public void ToggleMap() => _showMap = !_showMap;
 
         public void OpenBase(BuildingKind k)
         {
@@ -71,6 +71,7 @@ namespace Kinforge.Game
         public void Escape()
         {
             if (_showHelp) _showHelp = false;
+            else if (_showMap) _showMap = false;
             else if (_showBase) _showBase = false;
             else if (_showLog) _showLog = false;
             else _g.Selection.InspectUnitId = 0;
@@ -146,6 +147,7 @@ namespace Kinforge.Game
             _tinyBold = new GUIStyle(_tiny) { fontStyle = FontStyle.Bold };
             _tinyCenterBold = new GUIStyle(_tiny) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             _tinyCenterWhite = new GUIStyle(_tiny) { alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
+            _tinyRightFrame = new GUIStyle(_tiny) { alignment = TextAnchor.UpperRight };
             _smallRight = new GUIStyle(_small) { alignment = TextAnchor.UpperRight };
             _wrapTiny = new GUIStyle(_tiny) { wordWrap = true };
             _wrapSmall = new GUIStyle(_small) { wordWrap = true, fontSize = 12, normal = { textColor = new Color(0.88f, 0.88f, 0.86f) } };
@@ -227,14 +229,15 @@ namespace Kinforge.Game
             DrawTopBar(w);
             DrawAlerts(w);
             DrawBossBar(w);
-            DrawSquadCards(w);
+            DrawPartyFrames(w);
             DrawMinimap(w);
-            DrawCommandBar(w);
+            DrawHotbar(w);
             DrawObjectives(w);
             DrawInspect(w);
             DrawReportToast(w);
             if (_showBase) DrawBasePanel(w);
             if (_showLog) DrawLog(w);
+            if (_showMap) DrawWorldMap(w);
             if (_showHelp) DrawHelp();
             if (w.Victory && !_victoryDismissed) DrawVictory(w);
             DrawTooltip(w);
@@ -311,9 +314,8 @@ namespace Kinforge.Game
                 GUI.Label(new Rect(x + 14, 5, 110, 20), $"{Stockpile.Name(k)} <b>{w.Stock.Whole(k)}</b>", _small);
                 x += k == ResourceKind.Alloy ? 125 : (k == ResourceKind.Stone || k == ResourceKind.Fiber ? 118 : 92);
             }
-            int squads = w.Squads.Count;
-            int cap = w.Base != null ? w.Base.SquadCap : 1;
-            string right = $"Kin-bands {squads}/{cap}    {Clock(w.Time)}    seed {_g.Seed}";
+            int hall = w.Base != null ? w.Base.WarHallLevel : 1;
+            string right = $"War Hall {hall}    {Clock(w.Time)}    seed {_g.Seed}";
             if (_g.SimSpeed > 1f) right += $"    <color=#ffcc55>speed x{_g.SimSpeed:0} (F9)</color>";
             if (w.RevealMap) right += "    <color=#ffcc55>map revealed (F11)</color>";
             GUI.Label(new Rect(W - 520, 5, 510, 20), right, _smallRight);
@@ -413,11 +415,11 @@ namespace Kinforge.Game
                 case PickKind.Node:
                 {
                     var n = w.FindNode(hover.Id);
-                    if (n != null) text = $"<b>{n.Label}</b>\n{Stockpile.Name(n.Kind)}: {n.Amount:0} left\n<size=10>Right-click with a squad selected to gather.</size>";
+                    if (n != null) text = $"<b>{n.Label}</b>\n{Stockpile.Name(n.Kind)}: {n.Amount:0} left\n<size=10>Right-click to gather (gamepad: walk up and press A).</size>";
                     break;
                 }
                 case PickKind.Cache:
-                    text = "<b>Kin-core cache</b>\nA wiped squad's cores. Right-click with another squad to recover, then bring them home.";
+                    text = "<b>Kin-core cache</b>\nFallen kin-cores. Right-click to recover them, then bring them home to the Kin Cradle (or recall them from the base).";
                     break;
                 case PickKind.Building:
                     text = $"<b>{BuildingName(hover.Building)}</b>\n<size=10>Click to open the base panel (F2).</size>";

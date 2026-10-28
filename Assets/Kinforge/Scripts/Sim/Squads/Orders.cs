@@ -23,6 +23,15 @@ namespace Kinforge.Sim
                 case OrderType.RecallCores:
                     w.Base?.HandleOrder(w, o);
                     return;
+                case OrderType.Steer:
+                    foreach (int id in o.Squads)
+                    {
+                        var sq = w.FindSquad(id);
+                        if (sq == null || sq.Wiped) continue;
+                        sq.SteerDir = o.Pos.ClampLength(1f);
+                        sq.SteerAt = w.Time;
+                    }
+                    return;
                 case OrderType.DebugDrill:
                     foreach (int id in o.Squads)
                     {
@@ -126,7 +135,7 @@ namespace Kinforge.Sim
             }
         }
 
-        private static void LeaveSpecialStances(Squad sq)
+        internal static void LeaveSpecialStances(Squad sq)
         {
             if (sq.Stance == CommandType.FallBack || sq.Stance == CommandType.Rest)
             {

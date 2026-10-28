@@ -51,6 +51,12 @@ namespace Kinforge.Sim
 
         public int WeaponTier = 1;
         public int ArmorTier = 1;
+        public int HallLevel = 1;
+
+        // Direct control: the commander steers the squad's banner (Anchor) with WASD or a stick.
+        public Vec2 SteerDir;
+        public float SteerAt = -999f;
+        public float LastSteeredAt = -999f;
         public float LastUnderAttackAlert = -999f;
 
         public Unit Member(Role role)

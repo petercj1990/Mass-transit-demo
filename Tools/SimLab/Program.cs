@@ -495,11 +495,49 @@ static class Program
         }
     }
 
+    static PlayerOrder With(this PlayerOrder o, IEnumerable<int> ids)
+    {
+        o.Squads.AddRange(ids);
+        return o;
+    }
+
     sealed class TitanStats
     {
         public int Runs, Wins, Deaths, Grows, Clashes, Anvils, Sheltered, Cramped, NoRoom, Crashes, Violations;
-        public double Time;
+        public double Time, BossHp, HealerDry, Exhausted, FirstDown, TankWound;
+        public int[] EndPhase = new int[5];
+        public int[] FirstDownRole = new int[5];
+        public readonly Dictionary<string, double> DamageBy = new Dictionary<string, double>();
         public string FirstViolation;
+    }
+
+    /// <summary>War Hall level for lab raids (KF_HALL, default 1).</summary>
+    static int Hall => int.TryParse(Environment.GetEnvironmentVariable("KF_HALL"), out int h) ? h : 1;
+
+    /// <summary>Per-tick resource and survival diagnostics for a raid.</summary>
+    static void Track(TitanStats st, World w, Squad[] squads)
+    {
+        foreach (var ev in w.Events)
+        {
+            if (ev.Type != SimEventType.Hit) continue;
+            var t = w.FindUnitAny(ev.B);
+            if (t == null || !t.IsPlayer) continue;
+            var src = w.FindUnitAny(ev.A);
+            string key = $"{t.Role} <- {(src != null ? src.Kind.ToString() : "env")}";
+            st.DamageBy[key] = (st.DamageBy.TryGetValue(key, out double d) ? d : 0) + ev.Value;
+        }
+        foreach (var q in squads)
+        foreach (var m in q.Members)
+        {
+            if (m.Life == LifeState.Downed && st.FirstDown == 0)
+            {
+                st.FirstDown = w.Time;
+                st.FirstDownRole[(int)m.Role]++;
+            }
+            if (!m.IsActive) continue;
+            if (m.Role == Role.Healer && m.ManaFraction < 0.15f) st.HealerDry += Balance.Dt;
+            if (m.Exhausted) st.Exhausted += Balance.Dt;
+        }
     }
 
     /// <summary>One Rustmaw raid: squad A at tierA, squad B at tierB, passive or scripted-smart commander.</summary>
@@ -509,8 +547,12 @@ static class Program
         var w = Scenarios.BossArena(seed);
         w.TitanEnabled = titan;
         var a = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(-6f, -30f), tierA, CommandType.DefensiveFormation, gear);
-        var b = Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -30f), tierB, CommandType.DefensiveFormation, gear);
-        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f), Squads = { a.Id, b.Id } });
+        // tierB < 0: the kin-band raids alone.
+        var b = tierB >= 0 ? Scenarios.AddSquad(w, w.ArenaCenter + new Vec2(6f, -30f), tierB, CommandType.DefensiveFormation, gear) : null;
+        var squads = b != null ? new[] { a, b } : new[] { a };
+        var ids = squads.Select(q => q.Id).ToList();
+        foreach (var q in squads) PlayerBase.ApplyHallLevel(q, Hall);
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + new Vec2(0f, -12f) }.With(ids));
         int t = 0;
         CommandType last = CommandType.DefensiveFormation;
         for (; t < 20 * 600 && !w.Victory; t++)
@@ -524,14 +566,14 @@ static class Program
                 else if (boss.Phase == 3) want = boss.BlastPending || boss.NextBlastIn < 2.5f ? CommandType.Stack : CommandType.Charge;
                 if (want != last)
                 {
-                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want, Squads = { a.Id, b.Id } });
+                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want }.With(ids));
                     last = want;
                 }
                 if (boss.Phase == 2 && t % 40 == 0)
                 {
                     var mender = boss.Group.Members.FirstOrDefault(m => m.Kind == UnitKind.ScrapMender && m.IsActive);
                     if (mender != null && a.FocusTargetId != mender.Id)
-                        w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id, Squads = { a.Id, b.Id } });
+                        w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id }.With(ids));
                 }
             }
             w.Step();
@@ -555,11 +597,15 @@ static class Program
                 st.Violations++;
                 st.FirstViolation ??= $"seed {seed} t={w.Time:0.0}: {bad}";
             }
-            if (a.Wiped && b.Wiped) break;
+            Track(st, w, squads);
+            if (squads.All(q => q.Wiped)) break;
         }
         if (w.Victory) st.Wins++;
+        st.BossHp = w.Boss.Body.HpFraction;
+        st.EndPhase[Math.Min(4, w.Boss.Phase)]++;
         st.Time = t / 20.0;
-        st.Deaths = a.Members.Concat(b.Members).Count(m => m.Life == LifeState.Dead);
+        st.Deaths = squads.Sum(q => q.Members.Count(m => m.Life == LifeState.Dead));
+        st.TankWound = a.Member(Role.Tank).Wound;
         return st;
     }
 
@@ -585,9 +631,12 @@ static class Program
             return sq;
         }
         var a = Make(w.Nav.NearestWalkable(outside + outward.Right * 4f, 6), tierA);
-        var b = Make(w.Nav.NearestWalkable(outside - outward.Right * 4f, 6), tierB);
-        var ids = new[] { a.Id, b.Id };
-        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + outward * 10f, Squads = { a.Id, b.Id } });
+        var b = tierB >= 0 ? Make(w.Nav.NearestWalkable(outside - outward.Right * 4f, 6), tierB) : null;
+        // The world's own starting kin-band stays home; these are the raiders.
+        var squads = b != null ? new[] { a, b } : new[] { a };
+        var ids = squads.Select(q => q.Id).ToList();
+        foreach (var q in squads) PlayerBase.ApplyHallLevel(q, Hall);
+        w.Issue(new PlayerOrder { Type = OrderType.Move, Pos = w.ArenaCenter + outward * 10f }.With(ids));
         int t = 0;
         bool started = false;
         CommandType last = CommandType.DefensiveFormation;
@@ -602,13 +651,13 @@ static class Program
                 else if (boss.Phase == 3) want = boss.BlastPending || boss.NextBlastIn < 2.5f ? CommandType.Stack : CommandType.Charge;
                 if (want != last)
                 {
-                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want, Squads = { a.Id, b.Id } });
+                    w.Issue(new PlayerOrder { Type = OrderType.SetCommand, Command = want }.With(ids));
                     last = want;
                 }
                 if (boss.Phase == 2 && t % 40 == 0)
                 {
                     var mender = boss.Group.Members.FirstOrDefault(m => m.Kind == UnitKind.ScrapMender && m.IsActive);
-                    if (mender != null) w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id, Squads = { a.Id, b.Id } });
+                    if (mender != null) w.Issue(new PlayerOrder { Type = OrderType.Attack, TargetId = mender.Id }.With(ids));
                 }
             }
             w.Step();
@@ -634,11 +683,14 @@ static class Program
             // As in the campaign, the attempt has failed once Rustmaw resets (nobody left in the arena).
             if (boss.Active) started = true;
             else if (started && boss.Phase == 0) break;
-            if (a.Wiped && b.Wiped) break;
+            Track(st, w, squads);
+            if (squads.All(q => q.Wiped)) break;
         }
         if (w.Victory) st.Wins++;
+        st.BossHp = w.Boss.Body.HpFraction;
+        st.EndPhase[Math.Min(4, w.Boss.Phase)]++;
         st.Time = t / 20.0;
-        st.Deaths = a.Members.Concat(b.Members).Count(m => m.Life == LifeState.Dead);
+        st.Deaths = squads.Sum(q => q.Members.Count(m => m.Life == LifeState.Dead));
         return st;
     }
 
@@ -661,12 +713,21 @@ static class Program
             s.Runs += r.Runs; s.Wins += r.Wins; s.Deaths += r.Deaths; s.Grows += r.Grows; s.Clashes += r.Clashes; s.Anvils += r.Anvils;
             s.Sheltered += r.Sheltered; s.Cramped += r.Cramped; s.NoRoom += r.NoRoom; s.Crashes += r.Crashes; s.Violations += r.Violations;
             s.Time += r.Time;
+            s.BossHp += r.BossHp;
+            s.HealerDry += r.HealerDry; s.Exhausted += r.Exhausted; s.FirstDown += r.FirstDown; s.TankWound += r.TankWound;
+            for (int p = 0; p < 5; p++) { s.EndPhase[p] += r.EndPhase[p]; s.FirstDownRole[p] += r.FirstDownRole[p]; }
+            foreach (var kv in r.DamageBy) s.DamageBy[kv.Key] = (s.DamageBy.TryGetValue(kv.Key, out double d) ? d : 0) + kv.Value;
             s.FirstViolation ??= r.FirstViolation;
         }
         double n = s.Runs;
         Console.WriteLine($"  {label}: win {100.0 * s.Wins / n,3:0}%  deaths {s.Deaths / n,4:0.0}  time {s.Time / n,4:0}s  " +
                           $"grows {s.Grows / n,4:0.0}  clashes {s.Clashes / n,4:0.00}  anvils {s.Anvils / n,4:0.00}  crashes {s.Crashes / n,4:0.00}  " +
-                          $"sheltered {s.Sheltered / n,4:0.0}  cramped {s.Cramped}  no-room {s.NoRoom}  invariant violations {s.Violations}");
+                          $"sheltered {s.Sheltered / n,4:0.0}  cramped {s.Cramped}  no-room {s.NoRoom}  invariant violations {s.Violations}  " +
+                          $"boss hp left {s.BossHp / n:P0}  ended in phase {string.Join(" ", s.EndPhase.Select((c, p) => $"P{p}={c}"))}");
+        Console.WriteLine($"    healer dry {s.HealerDry / n:0}s  exhausted unit-s {s.Exhausted / n:0}  first down at {s.FirstDown / n:0}s " +
+                          $"({string.Join(" ", s.FirstDownRole.Select((c, r) => $"{(Role)r}={c}"))})  tank wound {s.TankWound / n:P0}");
+        if (Environment.GetEnvironmentVariable("KF_DMG") == "1")
+            Console.WriteLine("    damage taken: " + string.Join("  ", s.DamageBy.OrderByDescending(kv => kv.Value).Take(14).Select(kv => $"{kv.Key} {kv.Value / n:0}")));
         if (s.FirstViolation != null) Console.WriteLine("    first violation: " + s.FirstViolation);
     }
 

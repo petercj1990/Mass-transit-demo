@@ -21,6 +21,7 @@ namespace Kinforge.Sim
         HoldBurst,      // siegewright: tendency to save Burst Volley for big moments
         WallDistance,   // warwright: metres in front of the protected ally ramparts go up
         TrapLead,       // warwright: seconds of lead when predicting where enemies will run
+        Reserve,        // all roles: share of mana and stamina kept back for the moments that matter
     }
 
     public sealed class InstinctParamDef
@@ -277,6 +278,7 @@ namespace Kinforge.Sim
                 new InstinctParamDef { Param = InstinctParam.TauntLoose, Min = 1f, Max = 4f, Default = 1.5f, MoreText = "saves Taunt Roar for bigger crowds", LessText = "roars at the first loose enemy" },
                 new InstinctParamDef { Param = InstinctParam.Leash, Min = 1.5f, Max = 8f, Default = 4f, MoreText = "steps further out to meet enemies", LessText = "holds closer to the line" },
                 new InstinctParamDef { Param = InstinctParam.Retreat, Min = 0.08f, Max = 0.45f, Default = 0.18f, MoreText = "rotates back earlier when hurt", LessText = "stays in front longer when hurt" },
+                Reserve(0.2f, 0.5f),
             };
             RoleParams[Role.Healer] = new[]
             {
@@ -285,6 +287,7 @@ namespace Kinforge.Sim
                 new InstinctParamDef { Param = InstinctParam.TankBias, Min = 0f, Max = 35f, Default = 10f, MoreText = "prioritises the tank more", LessText = "spreads heals more evenly" },
                 new InstinctParamDef { Param = InstinctParam.KeepDistance, Min = 5f, Max = 14f, Default = 9f, MoreText = "keeps more distance", LessText = "stays closer to the fight" },
                 new InstinctParamDef { Param = InstinctParam.FieldMin, Min = 1f, Max = 4f, Default = 2f, MoreText = "saves Regen Field for bigger heals", LessText = "drops Regen Field sooner" },
+                Reserve(0.3f, 0.6f),
             };
             RoleParams[Role.Melee] = new[]
             {
@@ -293,6 +296,7 @@ namespace Kinforge.Sim
                 new InstinctParamDef { Param = InstinctParam.FocusLow, Min = 0f, Max = 40f, Default = 12f, MoreText = "goes after wounded targets more", LessText = "spreads damage more" },
                 new InstinctParamDef { Param = InstinctParam.AoeMin, Min = 1f, Max = 4f, Default = 2f, MoreText = "saves Cleave for bigger groups", LessText = "cleaves smaller groups" },
                 new InstinctParamDef { Param = InstinctParam.Retreat, Min = 0.08f, Max = 0.5f, Default = 0.22f, MoreText = "backs off earlier when hurt", LessText = "fights on longer when hurt" },
+                Reserve(0.15f, 0.45f),
             };
             RoleParams[Role.Siege] = new[]
             {
@@ -301,6 +305,7 @@ namespace Kinforge.Sim
                 new InstinctParamDef { Param = InstinctParam.FocusLow, Min = 0f, Max = 40f, Default = 12f, MoreText = "opens on wounded targets faster", LessText = "spreads fire more" },
                 new InstinctParamDef { Param = InstinctParam.TurretForward, Min = -4f, Max = 6f, Default = 0f, MoreText = "pushes turrets further forward", LessText = "builds its turrets further back" },
                 new InstinctParamDef { Param = InstinctParam.HoldBurst, Min = 0f, Max = 1f, Default = 0.3f, MoreText = "saves Burst Volley for bigger moments", LessText = "fires Burst Volley sooner" },
+                Reserve(0.2f, 0.5f),
             };
             RoleParams[Role.Warwright] = new[]
             {
@@ -309,7 +314,14 @@ namespace Kinforge.Sim
                 new InstinctParamDef { Param = InstinctParam.TrapLead, Min = 0f, Max = 1.6f, Default = 0.5f, MoreText = "leads its traps further ahead of enemies", LessText = "drops traps right on enemies" },
                 new InstinctParamDef { Param = InstinctParam.AoeMin, Min = 1f, Max = 4f, Default = 2f, MoreText = "waits for bigger groups before trapping", LessText = "traps smaller groups" },
                 new InstinctParamDef { Param = InstinctParam.Retreat, Min = 0.08f, Max = 0.5f, Default = 0.25f, MoreText = "backs off earlier when hurt", LessText = "fights on longer when hurt" },
+                Reserve(0.25f, 0.55f),
             };
         }
+
+        private static InstinctParamDef Reserve(float def, float max) => new InstinctParamDef
+        {
+            Param = InstinctParam.Reserve, Min = 0f, Max = max, Default = def,
+            MoreText = "keeps more mana and stamina in reserve", LessText = "spends mana and stamina more freely",
+        };
     }
 }

@@ -90,7 +90,7 @@ namespace Kinforge.Sim
 
         public float WeldRate => Body.MaxHp * 0.0075f;
 
-        public float DamageDealtMultiplier => 1f + 0.1f * Math.Max(0f, (_phaseTime - 80f) / 10f);
+        public float DamageDealtMultiplier => 1f + 0.1f * Math.Max(0f, (_phaseTime - Balance.RustmawEnrageAfter) / 10f);
 
         public string PhaseName
         {
@@ -188,7 +188,7 @@ namespace Kinforge.Sim
             if (GateOpen) return;
             GateOpen = true;
             if (Gate != null) Combat.DestroyStructure(w, Gate);
-            w.Alert("The Breach Sigil opens Breach Hold. Rustmaw waits inside. Bring at least two squads.", Center, 3);
+            w.Alert("The Breach Sigil opens Breach Hold. Rustmaw waits inside. Go in fresh: rest at base first, in ferrite gear.", Center, 3);
         }
 
         public void Update(World w)
@@ -205,6 +205,9 @@ namespace Kinforge.Sim
             if (Phase == 0)
             {
                 Body.Hp = Body.MaxHp;
+                // Asleep in its lair it holds no grudges: a stray shot or heal from outside must not pin
+                // a kin-band "in combat" with it at the gate.
+                Body.Threat.Clear();
                 Body.Intent = new Intent { Kind = IntentKind.Move, Point = Center };
                 foreach (var u in w.Units)
                 {
@@ -290,7 +293,7 @@ namespace Kinforge.Sim
                 if (_houndTimer <= 0f)
                 {
                     _houndTimer = 28f;
-                    SpawnHounds(w, 4);
+                    SpawnHounds(w, Balance.RustmawHoundsPerWave);
                 }
             }
         }
@@ -536,7 +539,7 @@ namespace Kinforge.Sim
                 giant.Fight.TitanClashes++;
                 giant.Fight.Interrupts++;
             }
-            Combat.Deal(w, Body, giant, 115f * DamageDealtMultiplier, DamageType.Kinetic, HitFlags.Melee | HitFlags.Ability);
+            Combat.Deal(w, Body, giant, Balance.RustmawChargeHit * DamageDealtMultiplier, DamageType.Kinetic, HitFlags.Melee | HitFlags.Ability);
             Combat.Knockback(w, giant, _chargeDir, 3.5f);
             if (giant.IsActive) Combat.Taunt(w, Body, giant, 3f); // the two beasts lock horns
             w.Emit(SimEventType.TitanClash, giant.Id, Body.Id, at, anvil != null ? 1f : 0f);
@@ -548,7 +551,7 @@ namespace Kinforge.Sim
 
         private void HitInPath(World w)
         {
-            float dmg = 115f * DamageDealtMultiplier;
+            float dmg = Balance.RustmawChargeHit * DamageDealtMultiplier;
             foreach (var u in w.Units)
             {
                 if (!u.IsPlayer || !u.IsTargetable || _chargeHit.Contains(u.Id)) continue;
@@ -611,7 +614,7 @@ namespace Kinforge.Sim
             if (_wavesSpawned < 3 && elapsed >= 0.5f + _wavesSpawned * 4.5f)
             {
                 _wavesSpawned++;
-                SpawnHounds(w, 4);
+                SpawnHounds(w, Balance.RustmawHoundsPerWave);
             }
             if (_stateTimer <= 0f)
             {
@@ -653,7 +656,7 @@ namespace Kinforge.Sim
             w.QueryUnits(Body.Pos, 5f, Faction.Player, _scratch);
             foreach (var u in _scratch.ToArray())
             {
-                Combat.Deal(w, Body, u, 80f * DamageDealtMultiplier, DamageType.Kinetic, HitFlags.Ability);
+                Combat.Deal(w, Body, u, Balance.RustmawEruption * DamageDealtMultiplier, DamageType.Kinetic, HitFlags.Ability);
                 Combat.Knockback(w, u, u.Pos - Body.Pos, 3f);
             }
             w.Emit(SimEventType.BossSurface, Body.Id, 0, Body.Pos, 5f);
@@ -688,7 +691,7 @@ namespace Kinforge.Sim
         {
             _state = State.Chase;
             _blastCd = 8.5f;
-            float dmg = 130f * DamageDealtMultiplier;
+            float dmg = Balance.RustmawBlast * DamageDealtMultiplier;
             Titan.ComputeShelter(w, Body.Pos, BlastRadius, _shelteredBy, _scratch);
             foreach (var u in w.Units.ToArray())
             {

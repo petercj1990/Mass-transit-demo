@@ -34,7 +34,11 @@ namespace Kinforge.Sim
                     case Role.Warwright: Warwright(c); break;
                 }
                 // Anyone can fall back to their slot if nothing better comes up.
-                c.Offer(30f, BrainContext.MoveTo(c.Slot(u.Role)), c.Debug ? "Hold slot" : null);
+                Vec2 slot = c.Slot(u.Role);
+                c.Offer(30f, BrainContext.MoveTo(slot), c.Debug ? "Hold slot" : null);
+                // The commander is moving the group: keep up with the banner rather than chase a fight.
+                if (SquadSystem.IsSteering(w, sq) && Vec2.Distance(u.Pos, slot) > 5f)
+                    c.Offer(68f, BrainContext.MoveTo(w.Nav.NearestWalkable(slot, 3)), c.Debug ? "Follow the banner" : null);
             }
             c.Commit();
         }

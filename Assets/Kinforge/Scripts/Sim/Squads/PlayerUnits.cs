@@ -57,6 +57,7 @@ namespace Kinforge.Sim
                 ThinkPhase = w.Rng.Range(0, Balance.ThinkInterval),
                 WeaponTier = sq?.WeaponTier ?? 1,
                 ArmorTier = sq?.ArmorTier ?? 1,
+                HallLevel = sq?.HallLevel ?? 1,
                 SpawnedAt = w.Time,
             };
             u.Abilities = new AbilitySlot[def.Kit.Length];
@@ -65,6 +66,8 @@ namespace Kinforge.Sim
                 u.Abilities[i] = new AbilitySlot { Def = AbilityDefs.Get(def.Kit[i]), Unlocked = i < 2 };
             }
             u.Hp = u.MaxHp;
+            u.Mana = u.MaxMana;
+            u.Stamina = u.MaxStamina;
             w.Register(u);
             sq?.Members.Add(u);
             return u;

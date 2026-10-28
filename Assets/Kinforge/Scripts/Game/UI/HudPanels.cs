@@ -42,131 +42,112 @@ namespace Kinforge.Game
         }
 
         // =====================================================================================
-        // Squad cards
+        // Party frames
         // =====================================================================================
 
-        private void DrawSquadCards(World w)
-        {
-            var sel = _g.Selection;
-            float y = 34f;
-            for (int i = 0; i < w.Squads.Count; i++)
-            {
-                var sq = w.Squads[i];
-                bool selected = sel.IsSelected(sq.Id);
-                var r = Panel(new Rect(8, y, CardW, CardH));
-                Color c = Palette.Squad(sq.ColorIndex);
-                if (selected)
-                {
-                    Swatch(new Rect(r.x, r.y, r.width, 2), c);
-                    Swatch(new Rect(r.x, r.yMax - 2, r.width, 2), c);
-                }
-                if (GUI.Button(new Rect(r.x, r.y, r.width, 22), GUIContent.none, _hidden))
-                {
-                    if (Event.current.shift) sel.Toggle(sq.Id);
-                    else sel.SelectOnly(sq.Id);
-                    if (_lastCardClickSquad == sq.Id && Time.unscaledTime - _lastCardClickTime < 0.4f) _g.Commands.FocusSelection();
-                    _lastCardClickSquad = sq.Id;
-                    _lastCardClickTime = Time.unscaledTime;
-                }
-                Swatch(new Rect(r.x + 8, r.y + 7, 10, 10), c);
-                GUI.Label(new Rect(r.x + 22, r.y + 2, 150, 20), $"<b>{i + 1}  {sq.Name}</b>", _label);
-                GUI.Label(new Rect(r.x + 130, r.y + 3, 132, 20), $"<color=#{Hex(Palette.KinMark)}>{CommandInfo.Get(sq.Stance).Name}</color>", _smallRight);
-                GUI.Label(new Rect(r.x + 8, r.y + 19, 250, 18), TaskText(w, sq), _tiny);
+        private const float FrameW = 262f;
+        private const float FrameH = 50f;
 
-                float ry = r.y + 36;
-                foreach (var m in sq.Members)
+        /// <summary>
+        /// WoW-style party frames: one per Vhorn with health (the dark red end is wounds that only rest
+        /// at base heals), mana and stamina, plus a header with the strategy, task and haul.
+        /// </summary>
+        private void DrawPartyFrames(World w)
+        {
+            var sq = _g.Commands.Squad;
+            if (sq == null) return;
+            var sel = _g.Selection;
+            float x = 8, y = 34;
+            var head = Panel(new Rect(x, y, FrameW, 44));
+            Color c = Palette.Squad(sq.ColorIndex);
+            Swatch(new Rect(head.x + 8, head.y + 7, 10, 10), c);
+            GUI.Label(new Rect(head.x + 22, head.y + 2, 130, 20), $"<b>{sq.Name}</b>", _label);
+            GUI.Label(new Rect(head.x + 120, head.y + 3, 134, 20), $"<color=#{Hex(Palette.KinMark)}>{CommandInfo.Get(sq.Stance).Name}</color>", _smallRight);
+            float load = sq.CarryLoad, capy = Mathf.Max(1f, sq.CarryCapacity);
+            string sub = TaskText(w, sq) + $"   haul {load:0}/{capy:0}";
+            if (sq.CoresCarried > 0) sub += $"   <color=#{Hex(Palette.KinMark)}>{sq.CoresCarried} kin-core(s)</color>";
+            GUI.Label(new Rect(head.x + 8, head.y + 21, FrameW - 16, 18), sub, _tiny);
+            y += 48;
+
+            foreach (var m in sq.Members)
+            {
+                var r = Panel(new Rect(x, y, FrameW, FrameH));
+                if (sel.InspectUnitId == m.Id) Swatch(new Rect(r.x, r.y, 2, r.height), c);
+                if (GUI.Button(r, GUIContent.none, _hidden)) sel.InspectUnitId = m.Id;
+
+                _tinyBold.normal.textColor = c;
+                GUI.Label(new Rect(r.x + 7, r.y + 2, 14, 16), RoleLetter(m.Role), _tinyBold);
+                GUI.Label(new Rect(r.x + 20, r.y + 1, 120, 18), m.Name, _small);
+                GUI.Label(new Rect(r.x + 112, r.y + 2, FrameW - 120, 16), StateTags(m), _tinyRightFrame);
+
+                float bx = r.x + 8, bw = FrameW - 16;
+                // Health: green = current, dark red = wounds (lost until resting at base), dark = healable.
+                var hpR = new Rect(bx, r.y + 19, bw, 11);
+                Swatch(hpR, new Color(0f, 0f, 0f, 0.6f));
+                if (m.Life != LifeState.Dead)
                 {
-                    var rowRect = new Rect(r.x + 4, ry - 1, r.width - 8, 15);
-                    if (sel.InspectUnitId == m.Id) Swatch(rowRect, new Color(1f, 1f, 1f, 0.07f));
-                    if (GUI.Button(rowRect, GUIContent.none, _hidden))
-                    {
-                        sel.InspectUnitId = m.Id;
-                        if (!sel.IsSelected(sq.Id)) sel.SelectOnly(sq.Id);
-                    }
-                    _tinyBold.normal.textColor = c;
-                    GUI.Label(new Rect(r.x + 8, ry - 2, 14, 16), RoleLetter(m.Role), _tinyBold);
-                    GUI.Label(new Rect(r.x + 22, ry - 2, 70, 16), m.Name, _tiny);
-                    string state;
-                    Color hp;
-                    switch (m.Life)
-                    {
-                        case LifeState.Dead:
-                            state = m.Core == CoreState.AtCradle ? "<color=#ffb040>regrowing</color>" : "<color=#ff5040>dead</color>";
-                            hp = Color.clear;
-                            break;
-                        case LifeState.Downed:
-                            state = "<color=#ff7060>downed</color>";
-                            hp = Color.clear;
-                            break;
-                        default:
-                            state = m.TitanTime > 0f ? $"<color=#ffb040>TITAN</color>"
-                                : m.Injured ? $"<color=#ffb040>injured</color>" : (m.Action == UnitAction.Resting ? "resting" : "");
-                            hp = m.Injured ? new Color(0.95f, 0.65f, 0.2f) : new Color(0.35f, 0.85f, 0.4f);
-                            break;
-                    }
-                    if (m.Life == LifeState.Active) Bar(new Rect(r.x + 92, ry + 4, 96, 6), m.HpFraction, hp, new Color(0f, 0f, 0f, 0.55f));
-                    else Bar(new Rect(r.x + 92, ry + 4, 96, 6), 0f, hp, new Color(0.2f, 0.05f, 0.05f, 0.7f));
-                    int tier = m.Doctrine.Tier(sq.Stance);
-                    for (int t = 0; t < 5; t++) Swatch(new Rect(r.x + 193 + t * 5, ry + 5, 4, 4), t < tier ? Palette.KinMark : new Color(1f, 1f, 1f, 0.12f));
-                    GUI.Label(new Rect(r.x + 220, ry - 2, 46, 16), state, _tiny);
-                    ry += 15;
+                    float cap = Mathf.Clamp01(1f - m.Wound);
+                    Swatch(new Rect(hpR.x + hpR.width * cap, hpR.y, hpR.width * (1f - cap), hpR.height), new Color(0.42f, 0.08f, 0.07f, 0.95f));
+                    float hp = m.Life == LifeState.Active ? m.HpFraction : 0f;
+                    Color hc = m.TitanTime > 0f ? new Color(1f, 0.68f, 0.25f) : m.Injured ? new Color(0.95f, 0.65f, 0.2f) : new Color(0.32f, 0.85f, 0.38f);
+                    Swatch(new Rect(hpR.x, hpR.y, hpR.width * hp, hpR.height), hc);
+                    GUI.Label(new Rect(hpR.x, hpR.y - 3, hpR.width, 16), m.Life == LifeState.Active ? $"{m.Hp:0} / {m.HealCap:0}" : "", _tinyCenterWhite);
                 }
-                float load = sq.CarryLoad;
-                float capy = Mathf.Max(1f, sq.CarryCapacity);
-                Bar(new Rect(r.x + 8, r.yMax - 12, 120, 5), load / capy, new Color(0.8f, 0.7f, 0.4f), new Color(0f, 0f, 0f, 0.5f));
-                string extra = $"carry {load:0}/{capy:0}";
-                if (sq.CoresCarried > 0) extra += $"   <color=#{Hex(Palette.KinMark)}>{sq.CoresCarried} kin-core(s)</color>";
-                GUI.Label(new Rect(r.x + 132, r.yMax - 18, 134, 16), extra, _tiny);
-                y += CardH + 6;
+                // Mana and stamina.
+                Bar(new Rect(bx, r.y + 33, bw, 5), m.Life == LifeState.Active ? m.ManaFraction : 0f, new Color(0.3f, 0.55f, 1f), new Color(0f, 0f, 0f, 0.55f));
+                Bar(new Rect(bx, r.y + 41, bw, 5), m.Life == LifeState.Active ? m.StaminaFraction : 0f,
+                    m.Exhausted ? new Color(0.9f, 0.4f, 0.2f) : new Color(0.95f, 0.8f, 0.3f), new Color(0f, 0f, 0f, 0.55f));
+                y += FrameH + 4;
             }
         }
 
-        // =====================================================================================
-        // Command bar
-        // =====================================================================================
-
-        private void DrawCommandBar(World w)
+        private static string StateTags(Unit m)
         {
-            var sel = _g.Selection;
-            if (sel.Squads.Count == 0)
+            switch (m.Life)
             {
-                var hint = Panel(new Rect(W / 2 - 230, H - 40, 460, 30));
-                GUI.Label(new Rect(hint.x + 10, hint.y + 6, 440, 20), "Select a kin-band: click a Vhorn, drag a box, or press 1-6.", _small);
-                return;
+                case LifeState.Dead: return m.Core == CoreState.AtCradle ? "<color=#ffb040>regrowing</color>" : "<color=#ff5040>DEAD</color>";
+                case LifeState.Downed: return "<color=#ff7060>DOWN</color>";
             }
-            const int cols = 5;
-            const float bw = 96f, bh = 38f, gap = 4f;
-            float width = cols * (bw + gap) + 8 + 150;
-            var r = Panel(new Rect(W / 2 - width / 2, H - (bh * 2 + gap + 38), width, bh * 2 + gap + 34));
+            var sb = new StringBuilder();
+            if (m.TitanTime > 0f) sb.Append("<color=#ffb040>TITAN</color> ");
+            if (m.Injured) sb.Append("<color=#ffb040>injured</color> ");
+            if (m.Exhausted) sb.Append("<color=#ff8a50>exhausted</color> ");
+            if (m.Wound >= 0.35f) sb.Append("<color=#d05050>wounded</color> ");
+            if (m.Action == UnitAction.Resting) sb.Append("resting ");
+            if (m.Garrisoned) sb.Append("home ");
+            return sb.ToString();
+        }
 
-            CommandType? shared = null;
-            var names = new StringBuilder();
-            foreach (int id in sel.Squads)
-            {
-                var sq = w.FindSquad(id);
-                if (sq == null) continue;
-                if (names.Length > 0) names.Append(", ");
-                names.Append(sq.Name);
-                if (shared == null) shared = sq.Stance;
-                else if (shared != sq.Stance) shared = (CommandType)255;
-            }
-            GUI.Label(new Rect(r.x + 8, r.y + 4, width - 16, 20), $"<b>{names}</b>   <size=10>right-click: move / attack (focus) / gather / recover cores / return home</size>", _small);
+        // =====================================================================================
+        // Strategy hotbar
+        // =====================================================================================
+
+        private void DrawHotbar(World w)
+        {
+            var sq = _g.Commands.Squad;
+            if (sq == null) return;
+            const float bw = 72f, bh = 42f, gap = 4f, ow = 84f;
+            int n = CommandInput.CommandForKey.Length;
+            float width = n * (bw + gap) + 3 * (ow + gap) + 12;
+            var r = Panel(new Rect(W / 2 - width / 2, H - bh - 30, width, bh + 22));
+            GUI.Label(new Rect(r.x + 8, r.y + 2, width - 16, 16),
+                "<size=10>WASD / left stick: move the kin-band   drag / right stick: camera   right-click: attack, gather, recover, go home   M: map</size>", _tiny);
 
             CommandInfo hovered = null;
-            float by = r.y + 26;
-            for (int i = 0; i < CommandInput.CommandForKey.Length; i++)
+            float by = r.y + 18;
+            for (int i = 0; i < n; i++)
             {
                 var cmd = CommandInput.CommandForKey[i];
                 var info = CommandInfo.Get(cmd);
-                var br = new Rect(r.x + 4 + (i % cols) * (bw + gap), by + (i / cols) * (bh + gap), bw, bh);
-                bool on = shared.HasValue && shared.Value == cmd;
-                if (GUI.Button(br, $"{info.Name}\n<size=10>[{info.Hotkey}]</size>", on ? _buttonOn : _button)) _g.Commands.IssueCommand(cmd);
+                var br = new Rect(r.x + 6 + i * (bw + gap), by, bw, bh);
+                bool on = sq.Stance == cmd;
+                if (GUI.Button(br, $"<size=10>{info.Hotkey}</size>\n{ShortName(cmd)}", on ? _buttonOn : _button)) _g.Commands.IssueCommand(cmd);
                 if (br.Contains(Event.current.mousePosition)) hovered = info;
             }
-            float ox = r.x + 4 + cols * (bw + gap) + 4;
-            if (GUI.Button(new Rect(ox, by, 142, 26), "Return home  <size=10>[H]</size>", _button)) _g.Commands.IssueSimple(OrderType.ReturnToBase);
-            if (GUI.Button(new Rect(ox, by + 28, 142, 26), "Garrison  <size=10>[J]</size>", _button)) _g.Commands.IssueSimple(OrderType.Garrison);
-            if (GUI.Button(new Rect(ox, by + 56, 142, 24), "Stop  <size=10>[K]</size>", _button)) _g.Commands.IssueSimple(OrderType.Stop);
+            float ox = r.x + 6 + n * (bw + gap) + 4;
+            if (GUI.Button(new Rect(ox, by, ow, bh), "<size=10>H</size>\nGo home", _button)) _g.Commands.IssueSimple(OrderType.ReturnToBase);
+            if (GUI.Button(new Rect(ox + ow + gap, by, ow, bh), "<size=10>J</size>\nGarrison", _button)) _g.Commands.IssueSimple(OrderType.Garrison);
+            if (GUI.Button(new Rect(ox + 2 * (ow + gap), by, ow, bh), "<size=10>K</size>\nStop", _button)) _g.Commands.IssueSimple(OrderType.Stop);
 
             if (hovered != null)
             {
@@ -176,13 +157,29 @@ namespace Kinforge.Game
             }
         }
 
+        private static string ShortName(CommandType c)
+        {
+            switch (c)
+            {
+                case CommandType.DefensiveFormation: return "Defend";
+                case CommandType.HoldPosition: return "Hold";
+                case CommandType.FocusFire: return "Focus";
+                case CommandType.SpreadOut: return "Spread";
+                case CommandType.FallBack: return "Fall back";
+            }
+            return CommandInfo.Get(c).Name;
+        }
+
         // =====================================================================================
         // Objectives
         // =====================================================================================
 
+        /// <summary>The right column starts under the minimap (top right, as in WoW).</summary>
+        private float RightColumnTop => 34 + MiniSize + 18;
+
         private void DrawObjectives(World w)
         {
-            float x = W - 336, y = 34;
+            float x = W - 336, y = RightColumnTop;
             if (!_showObjectives)
             {
                 var small = Panel(new Rect(x, y, 328, 24));
@@ -200,10 +197,10 @@ namespace Kinforge.Game
             {
                 (w.Reports.Count > 0, "Fight a camp; Doctrine grows with every fight"),
                 (w.Stock[ResourceKind.Ferrite] >= 20f || w.Stock[ResourceKind.Alloy] > 0f, "Gather ferrite (crater beds) and haul it home"),
-                (b != null && b.WarHallLevel >= 2 && w.Squads.Count >= 2, "Upgrade the War Hall and recruit a 2nd kin-band"),
-                (gear, "Garrison a squad to smelt alloy; craft ferrite gear"),
+                (gear, "Garrison at home: heal wounds, smelt alloy, craft gear"),
+                (b != null && b.WarHallLevel >= 2, "Upgrade the War Hall: drills make the kin-band stronger"),
                 (b != null && b.SigilCrafted, "Craft the Breach Sigil to open Breach Hold"),
-                (w.Victory, "Defeat Rustmaw (3 phases; bring 2 squads)"),
+                (w.Victory, "Defeat Rustmaw (3 phases)"),
             };
             float sy = r.y + 22;
             foreach (var s in steps)
@@ -222,8 +219,8 @@ namespace Kinforge.Game
         {
             var u = w.FindUnitAny(_g.Selection.InspectUnitId);
             if (u == null || (u.Removed && !u.IsPlayer)) return;
-            float top = 34 + (_showObjectives ? 134 : 30);
-            float height = Mathf.Min(H - top - 214, u.IsPlayer ? 560 : 300);
+            float top = RightColumnTop + (_showObjectives ? 134 : 30);
+            float height = Mathf.Min(H - top - 76, u.IsPlayer ? 560 : 300);
             if (height < 120) return;
             var r = Panel(new Rect(W - 336, top, 328, height));
             if (u.IsPlayer) InspectPlayer(w, u, r);
@@ -242,6 +239,9 @@ namespace Kinforge.Game
             string gear = $"{(u.WeaponTier > 1 ? "Ferrite" : "Scrap")} arms, {(u.ArmorTier > 1 ? "ferrite" : "scrap")} plate";
             GUI.Label(new Rect(x, y, cw, 18), $"{u.Hp:0}/{u.MaxHp:0} hp   armour {u.Armor:0}   {state}", _small);
             y += 16;
+            string wound = u.Wound > 0.005f ? $"   <color=#d05050>wounds {u.Wound:P0}</color> (heal at home)" : "";
+            GUI.Label(new Rect(x, y, cw, 16), $"<color=#7fa8ff>mana {u.Mana:0}/{u.MaxMana:0}</color>   <color=#f0cc55>stamina {u.Stamina:0}/{u.MaxStamina:0}</color>{wound}", _tiny);
+            y += 14;
             if (u.TitanTime > 0f)
             {
                 GUI.Label(new Rect(x, y, cw, 16), $"<color=#{Hex(Palette.KinMark)}>Titan Form</color>: +35% health, +{Balance.TitanArmor:0} armour, x{Balance.TitanThreatMul:0.#} threat, slower", _tiny);
@@ -486,12 +486,13 @@ namespace Kinforge.Game
             y += 26;
             int garrisons = b.GarrisonCount(w);
             GUI.Label(new Rect(x, y, cw, 18), garrisons > 0
-                ? $"<color=#8fdc8f>{garrisons} squad(s) garrisoned</color>: the Smelter and Salvage Bench are running, and garrisoned Vhorn rest 3x faster."
-                : "<color=#ffb040>No squad garrisoned.</color> Workshops only run with a squad garrisoned. Select a squad and press [J].", _wrapTiny);
+                ? "<color=#8fdc8f>The kin-band is home</color>: wounds are closing, mana and stamina refill, and the Smelter and Salvage Bench are running."
+                : "<color=#ffb040>The kin-band is out.</color> Wounds only heal, and the workshops only run, while it is garrisoned at home [J].", _wrapTiny);
             y += 30;
 
             // War Hall
-            GUI.Label(new Rect(x, y, cw, 18), $"<b>War Hall</b>  level {b.WarHallLevel}: squad cap {b.SquadCap} ({w.Squads.Count} kin-bands)", _small);
+            int lvl = b.WarHallLevel;
+            GUI.Label(new Rect(x, y, cw, 18), $"<b>War Hall</b>  level {lvl}: drills give +{Balance.HallHealthPerLevel * (lvl - 1):P0} health, +{Balance.HallResourcePerLevel * (lvl - 1):P0} mana and stamina", _small);
             y += 18;
             if (b.WarHallLevel < Balance.MaxWarHallLevel)
             {
@@ -510,17 +511,13 @@ namespace Kinforge.Game
             {
                 var names = new StringBuilder();
                 foreach (int id in b.CradleQueue) names.Append(w.FindUnitAny(id)?.Name).Append(' ');
-                GUI.Label(new Rect(x, y, cw, 16), $"Kin-cores waiting: {names}  (each regrowth: {CostText(w, PlayerBase.RegrowCost)})", _tiny);
+                GUI.Label(new Rect(x, y, cw, 16), $"Kin-cores waiting: {names}  (each regrowth: {CostText(w, PlayerBase.RegrowCost)}, or twice as slow without)", _tiny);
                 y += 16;
             }
-            bool canRecruit = w.Squads.Count < b.SquadCap && !b.Recruiting && w.Stock.Has(PlayerBase.RecruitCost);
-            if (GUI.Button(new Rect(x, y, 200, 22), "Recruit a kin-band", canRecruit ? _button : _buttonOff)) w.Issue(new PlayerOrder { Type = OrderType.Recruit });
-            GUI.Label(new Rect(x + 210, y + 3, cw - 210, 18), CostText(w, PlayerBase.RecruitCost) + (w.Squads.Count >= b.SquadCap ? "  <color=#ff7060>(cap reached)</color>" : ""), _tiny);
-            y += 26;
             if (w.Caches.Count > 0)
             {
-                if (GUI.Button(new Rect(x, y, 200, 22), "Recall kin-cores (last resort)", _button)) w.Issue(new PlayerOrder { Type = OrderType.RecallCores });
-                GUI.Label(new Rect(x + 210, y + 3, cw - 210, 18), CostText(w, PlayerBase.RecallCost) + "  only when no Vhorn is left standing", _tiny);
+                if (GUI.Button(new Rect(x, y, 200, 22), "Recall kin-cores now", _button)) w.Issue(new PlayerOrder { Type = OrderType.RecallCores });
+                GUI.Label(new Rect(x + 210, y + 3, cw - 210, 18), $"only when no Vhorn is left standing (happens on its own after {Balance.WipeRecallSeconds:0} s)", _tiny);
                 y += 26;
             }
             y += 4;
@@ -559,25 +556,24 @@ namespace Kinforge.Game
 
         private void DrawHelp()
         {
-            var r = Panel(new Rect(W / 2 - 330, 70, 660, 610));
+            var r = Panel(new Rect(W / 2 - 340, 60, 680, 660));
             GUI.Label(new Rect(r.x + 14, r.y + 10, 600, 24), "<b>KINFORGE</b>  MVP slice: The Craters", _title);
             string body =
-                "You are an unseen commander. Your kin-bands of five Vhorn (Shieldbearer, Mender, Bruiser, Siegewright, Warwright) " +
-                "fight on their own. You set <b>intent</b>: where to go and which combat command to fight under. They pick targets, " +
-                "positions and abilities themselves, and they <b>learn</b>: Doctrine tiers unlock smarter behaviour per command, Instinct tunes it fight by fight. " +
-                "The game never pauses.\n\n" +
-                "<b>Camera</b>  WASD / arrows pan, Q/E rotate, mouse wheel zoom, middle-drag pan (Alt+middle-drag rotates), Space centres on the selection, F8 edge-scroll.\n" +
-                "<b>Select</b>  click a Vhorn or drag a box; 1-6 pick a kin-band (double-tap to jump); Tab cycles; shift adds.\n" +
-                "<b>Orders</b>  right-click ground: move.  Enemy: attack it (Focus target).  Resource: gather and haul home.  Base: return and deposit.  Kin-core cache: recover.\n" +
-                "<b>Combat commands</b>  Z Charge, X Defensive Formation, C Hold Position, V Kite, B Focus Fire, N Spread Out, M Stack, G Fall Back, T Fortify, R Rest. Hover the buttons for what each does and risks.\n" +
-                "<b>Other</b>  H return home, J garrison, K stop.  F2 base, F3 battle reports, Esc closes panels.\n\n" +
-                "<b>Injury</b>  A Vhorn dropped once is Downed and gets up Injured (-20% health and speed). Rest clears it. Dropped again while Injured: killed. " +
-                "A squadmate carries its kin-core home; the Kin Cradle regrows it with Doctrine and Instinct intact (unbanked XP is lost). A full wipe drops a core cache.\n\n" +
-                "<b>Titan Form</b>  At Doctrine tier 3 (any command) a Shieldbearer unlocks its fourth ability: it grows to titan size for 15 s. The giant slows enemies at its shield, " +
-                "catches shots aimed past it, stops Rustmaw's charge dead and shelters kin behind it from fire waves. The tank decides when; Doctrine makes it decide well.\n\n" +
-                "<b>Goal</b>  Gather ferrite and hide, garrison a squad to run the Smelter and Salvage Bench, upgrade the War Hall for a second kin-band, craft ferrite gear and the " +
-                "Breach Sigil, then take two squads into Breach Hold (north) and kill <b>Rustmaw</b>.\n\n" +
-                "<b>Playtest keys</b>  F7 drill the selected squads to Doctrine tier 3 (try Titan Form now), F9 game speed x1/x2/x4, F10 skip Rustmaw to its next phase, F11 reveal map.";
+                "You lead one kin-band of five Vhorn (Shieldbearer, Mender, Bruiser, Siegewright, Warwright) like a raid leader leads a party: " +
+                "you decide <b>where they go and stand</b> and <b>which strategy</b> they fight under. They pick targets and abilities themselves, " +
+                "spend their own mana and stamina, and they <b>learn</b>: Doctrine tiers unlock smarter play per strategy, Instinct tunes it fight by fight. The game never pauses.\n\n" +
+                "<b>Move</b>  WASD or the left stick walks the kin-band (relative to the camera). Right-click ground to march there, an enemy to focus it, a resource to gather, a kin-core cache to recover, the base to go home.\n" +
+                "<b>Camera</b>  drag with the mouse or use the right stick to look around; Q/E turn, wheel or triggers zoom, Space (right stick click) swings behind the kin-band. M opens the map of what you have explored.\n" +
+                "<b>Strategies</b>  1 Charge, 2 Defend, 3 Hold, 4 Kite, 5 Focus Fire, 6 Spread Out, 7 Stack, 8 Fall Back, 9 Rest, 0 Fortify (gamepad: bumpers cycle). Hover the hotbar for what each does and risks.\n" +
+                "<b>Other</b>  H go home, J garrison, K stop, Tab inspect the next Vhorn, F2 base, F3 battle reports. Gamepad: A gather/recover here, X focus the enemy ahead, Y go home, B fall back.\n\n" +
+                "<b>Push your luck</b>  Every hit leaves a wound: the dark red end of a health bar is health that no heal brings back until the kin-band rests at home (garrison, J). " +
+                "The further out you push, the lower everyone's ceiling gets. Mana (blue) pays for heals, walls, siege works and Titan Form; stamina (gold) for dodges and heavy blows. " +
+                "Veterans keep a reserve; green Vhorn spend it all. Going home also banks Doctrine, deposits the haul, and runs the Smelter and Salvage Bench.\n\n" +
+                "<b>Injury</b>  Downed once: up again Injured. Downed while Injured: killed; a squadmate carries the kin-core home and the Kin Cradle regrows it with Doctrine intact. " +
+                "A wiped kin-band's cores come home on their own (slower to regrow if you can't pay).\n\n" +
+                "<b>Titan Form</b>  At Doctrine tier 3 the Shieldbearer can grow to titan size for 15 s: a living wall that stops Rustmaw's charge and shelters kin from fire.\n\n" +
+                "<b>Loop</b>  Venture out, fight and gather, come home before the wounds run too deep, craft gear and upgrade the War Hall, then open Breach Hold with the Sigil and kill <b>Rustmaw</b>.\n\n" +
+                "<b>Playtest keys</b>  F7 drill to Doctrine tier 3, F9 game speed, F10 skip a Rustmaw phase, F11 reveal map.";
             GUI.Label(new Rect(r.x + 14, r.y + 40, r.width - 28, r.height - 80), body, _wrapSmall);
             if (GUI.Button(new Rect(r.x + r.width / 2 - 90, r.yMax - 36, 180, 26), "Start  (F1 toggles this)", _buttonOn)) _showHelp = false;
             if (GUI.Button(new Rect(r.x + 14, r.yMax - 36, 150, 26), "New random world", _button))
@@ -595,7 +591,7 @@ namespace Kinforge.Game
             foreach (var sq in w.Squads)
                 foreach (var m in sq.Members) kills += m.Kills;
             string body = $"Biome 1, The Craters, is cleared in {Clock(w.VictoryAt)}.\n" +
-                          $"Your kin-bands made {kills} kills and fought {w.Reports.Count} battles.\n\n" +
+                          $"Your kin-band made {kills} kills and fought {w.Reports.Count} battles.\n\n" +
                           "Its relic would unlock the Forge, Core Lathe and War Shrine and the road to the Fissures: that is the next milestone. " +
                           "Thanks for playtesting this slice!";
             GUI.Label(new Rect(r.x + 20, r.y + 64, r.width - 40, 130), body, _center);

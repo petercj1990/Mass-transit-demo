@@ -1,6 +1,9 @@
 namespace Kinforge.Sim
 {
-    /// <summary>Cooldowns, damage over time, crowd-control timers, resting and passive recovery.</summary>
+    /// <summary>
+    /// Cooldowns, damage over time, crowd-control timers, resting and passive recovery, mana and
+    /// stamina regeneration, and wound recovery (only at base).
+    /// </summary>
     public static class StatusSystem
     {
         public static void Update(World w)
@@ -13,6 +16,9 @@ namespace Kinforge.Sim
 
                 if (u.Garrisoned)
                 {
+                    // Home: wounds close, mana and stamina refill, and the healing ceiling comes back up.
+                    u.Wound = System.Math.Max(0f, u.Wound - Balance.WoundHealGarrison * dt);
+                    Regen(u, dt, Balance.ManaRegenGarrison, Balance.StaminaRegenResting, true);
                     Rest(w, u, dt, Balance.RestBaseMultiplier);
                     continue;
                 }
@@ -54,6 +60,14 @@ namespace Kinforge.Sim
 
                 if (!u.IsPlayer) continue;
 
+                bool inCombat = u.Squad != null && u.Squad.InCombat;
+                bool resting = u.Action == UnitAction.Resting;
+                if (resting) Regen(u, dt, Balance.ManaRegenResting, Balance.StaminaRegenResting, true);
+                else if (inCombat) Regen(u, dt, Balance.ManaRegenCombat, Balance.StaminaRegenCombat, w.Time - u.LastExertTime > Balance.StaminaRegenDelay);
+                else Regen(u, dt, Balance.ManaRegenOutOfCombat, Balance.StaminaRegenOutOfCombat, true);
+                if (!inCombat && u.Wound > 0f && w.InBase(u.Pos)) u.Wound = System.Math.Max(0f, u.Wound - Balance.WoundHealAtBase * dt);
+                if (u.Hp > u.HealCap) u.Hp = System.Math.Max(1f, u.HealCap);
+
                 if (u.Action == UnitAction.Resting)
                 {
                     float mul = 1f;
@@ -67,6 +81,14 @@ namespace Kinforge.Sim
                     Combat.Heal(w, null, u, u.MaxHp * Balance.OutOfCombatRegen * dt, false);
                 }
             }
+        }
+
+        private static void Regen(Unit u, float dt, float manaRate, float staminaRate, bool staminaBack)
+        {
+            float mm = u.MaxMana;
+            if (u.Mana < mm) u.Mana = System.Math.Min(mm, u.Mana + mm * manaRate * dt);
+            float ms = u.MaxStamina;
+            if (staminaBack && u.Stamina < ms) u.Stamina = System.Math.Min(ms, u.Stamina + ms * staminaRate * dt);
         }
 
         private static void Rest(World w, Unit u, float dt, float mul)
